@@ -87,6 +87,9 @@ Proof: `test::approvals_screen_lists_pending_requests_and_actions`
 **C24** - MCP Servers exibe somente os statuses `Connected`, `Disconnected` ou `Error` no estado de cada servidor (ADM-01, AC 24)
 Proof: `test::mcp_servers_screen_renders_allowed_statuses`
 
+**C29** - Login/onboarding, Tool Calls, Policies e Settings possuem superfícies administrativas dedicadas dentro do Command Center (ADM-01, UI design)
+Proof: `test::admin_screens_render_command_center_sections`
+
 ### S5 - Operação por CLI e headless · proof selectors nomeados · escopo de arquivos a definir no build
 
 **C25** - `mcp-firewall init` cria `mcp-firewall.yaml` quando o arquivo não existe (CLI-01, AC 25)
@@ -115,6 +118,7 @@ Proof: `test::cli_init_refuses_existing_yaml`
 | users and sessions (2) | first `ADMIN` -> C15 · authenticated session -> C16 | - |
 | MCP Server statuses (3) | `Connected` -> C24 · `Disconnected` -> C24 · `Error` -> C24 | - |
 | CLI commands/modes (3) | `init` -> C25 · `start` -> C26 · `start --headless` -> C27 | - |
+| Command Center admin screens (4) | Login/onboarding -> C29 · Tool Calls -> C29 · Policies -> C29 · Settings -> C29 | - |
 | `tools/call` surface statuses (4) | `200` forwarded -> C2 · `403` denied -> C3 · `409` approval unavailable -> C14 · `502` transport failure -> C6 | - |
 | `POST /api/auth/setup` statuses (3) | `201` -> C15 · `400` -> C15 · `409`/`422` -> C15 | - |
 | `POST /api/auth/login` statuses (2) | `200` -> C16 · `401`/`422` -> C17 | - |
@@ -142,7 +146,7 @@ Proof: `test::cli_init_refuses_existing_yaml`
 | Boundary/UI/CLI behavior | one named test at each exposed boundary | each route, command, status and rendered UI obligation has a concrete assertion |
 | Pass-through instrumentation | consumer proof only | no duplicate test required for a single forwarding call |
 
-Evidence: this repository has no earlier test conventions; `test/mvp.test.js` is the first executable test surface. Cost: the 28 named proofs in this feature. Both rows are met by the current proof set; the UI review below additionally checks the binding source.
+Evidence: this repository has no earlier test conventions; `test/mvp.test.js` is the first executable test surface. Cost: the 29 named proofs in this feature. Both rows are met by the current proof set; the UI review below additionally checks the binding source.
 
 ## Swept
 
