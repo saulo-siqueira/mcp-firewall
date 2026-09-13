@@ -272,7 +272,7 @@ export function createApiServer(firewall, { port = 3210 } = {}) {
         response.writeHead(status, { 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }); response.end(JSON.stringify(body.method ? { jsonrpc: '2.0', id: body.id, result: result.error ? undefined : result, error: result.error || undefined } : result)); return;
       } catch (error) { response.writeHead(502, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'TARGET_ERROR', message: error.message })); return; }
     }
-    const result = await firewall.api(request.method, url.pathname, body, sessionId);
+    const result = await firewall.api(request.method, url.pathname + url.search, body, sessionId);
     const headers = { 'content-type': 'application/json' }; if ((url.pathname === '/api/auth/login' || url.pathname === '/api/auth/setup') && result.body?.session?.id) headers['set-cookie'] = `session=${encodeURIComponent(result.body.session.id)}; HttpOnly; SameSite=Lax; Path=/`;
     if (url.pathname === '/api/auth/logout' && result.status === 204) headers['set-cookie'] = 'session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/';
     response.writeHead(result.status, headers);
