@@ -2,8 +2,8 @@
 
 **Verdict**: PASS (pending independent reviewer sign-off)
 **Profile**: ui
-**Diff range**: `2969912..4d69509`
-**Round**: 8 - independent review in progress
+**Diff range**: `4d69509..07f61c7`
+**Round**: 9 - independent review in progress
 **Verifier**: independent sub-agent review requested; Docker daemon and listener permissions may be unavailable in the verification environment
 
 ## Binding sources
