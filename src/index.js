@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { trace } from '@opentelemetry/api';
 
 const DECISIONS = ['ALLOW', 'DENY', 'REQUIRE_APPROVAL'];
 const TRANSPORTS = ['stdio', 'http'];
 const APPROVAL_STATES = ['PENDING', 'APPROVED', 'REJECTED'];
 const REDACTED = '[REDACTED]';
+const stage = (name, work) => { const span = trace.getTracer('mcp-firewall').startSpan(name); try { return work(); } finally { span.end(); } };
 const yamlScalar = (value) => typeof value === 'boolean' ? String(value) : JSON.stringify(String(value ?? ''));
 
 export const createMcpCall = ({ agent, server, tool, arguments: args = {} }) => ({
@@ -116,24 +118,24 @@ export class Firewall {
   deleteServer(name) { const deleted = this.servers.delete(name); if (deleted) this.persist(); return deleted; }
 
   evaluate(input) {
-    const call = createMcpCall(input); const candidates = [...this.policies.values()].filter((p) => p.enabled && policyMatches(p, call));
+    const call = createMcpCall(input); const candidates = stage('policy.match', () => [...this.policies.values()].filter((p) => p.enabled && policyMatches(p, call)));
     const rank = { ALLOW: 1, REQUIRE_APPROVAL: 2, DENY: 3 };
     candidates.sort((a, b) => rank[b.action] - rank[a.action]);
     const policy = candidates[0]; return { decision: policy?.action || 'DENY', policy: policy?.name || null, call };
   }
 
   async handleCall(input) {
-    const evaluated = this.evaluate(input); const call = { ...evaluated.call, arguments: redact(evaluated.call.arguments) };
+    const evaluated = stage('policy.evaluate', () => this.evaluate(input)); const call = { ...evaluated.call, arguments: stage('secret.scan', () => redact(evaluated.call.arguments)) };
     const started = Date.now(); const base = input._audit_id && this.audit.get(input._audit_id) ? this.audit.get(input._audit_id) : { id: crypto.randomUUID(), agent: call.agent, server: call.server, tool: call.tool, arguments: call.arguments, decision: evaluated.decision, policy: evaluated.policy, duration: 0, result: null, created_at: now() };
     const finish = (result, error = null) => { base.duration = Date.now() - started; base.result = result ?? error?.message ?? null; this.audit.set(base.id, base); this.persist(); return { ...result && typeof result === 'object' ? result : {}, decision: evaluated.decision, result, error, audit: base }; };
     if (evaluated.decision === 'DENY') return finish(null, { code: 'POLICY_DENIED', message: 'MCP call denied by policy' });
     if (evaluated.decision === 'REQUIRE_APPROVAL' && !input._approved) {
-      if (!this.approvalAvailable) { const unavailable = finish(null, { code: 'APPROVAL_UNAVAILABLE', message: 'approval mechanism unavailable' }); unavailable.decision = 'DENY'; return unavailable; }
+      if (!this.approvalAvailable) { const unavailable = stage('approval.check', () => finish(null, { code: 'APPROVAL_UNAVAILABLE', message: 'approval mechanism unavailable' })); unavailable.decision = 'DENY'; return unavailable; }
       const approval = { id: id('approval'), status: 'PENDING', agent: call.agent, server: call.server, tool: call.tool, arguments: call.arguments, requested_at: now(), policy: evaluated.policy, call };
       approval.audit_id = base.id; this.approvals.set(approval.id, approval); this.persist(); return finish(null, null) && { decision: 'REQUIRE_APPROVAL', approval, audit: base };
     }
     const server = this.servers.get(call.server); let result;
-    try { if (!server) throw new Error('MCP server not configured'); result = server.handler ? await server.handler(call) : await invokeTarget(server, call); return finish(result); }
+    try { if (!server) throw new Error('MCP server not configured'); result = await stage('mcp.forward', () => server.handler ? server.handler(call) : invokeTarget(server, call)); return finish(result); }
     catch (error) { return finish(null, { code: 'TARGET_ERROR', message: error.message }); }
   }
 

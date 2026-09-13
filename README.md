@@ -11,6 +11,8 @@ node src/cli.js init
 docker compose up --build
 ```
 
+The same workflow is supported with pnpm: `pnpm install`, `pnpm dev`, and `pnpm test`. The development server is available at `http://localhost:3210`.
+
 Open [http://localhost:3210/](http://localhost:3210/) for the React/Vite Command Center, or `/api/dashboard` for the server-rendered fallback. The Fastify MCP gateway supports `POST /mcp`, the SDK-backed Streamable HTTP endpoint `POST|GET|DELETE /mcp/sdk`, and the compatibility boundary `POST /mcp/tools/call`; administration is under `/api`.
 
 ## Policy example
@@ -35,6 +37,14 @@ The core can run without the dashboard with `node src/cli.js start --headless` o
 ## Architecture
 
 The gateway receives an MCP tool call, evaluates YAML policies, redacts sensitive arguments, optionally pauses for an administrator, forwards to a configured STDIO or Streamable HTTP server, and records an audit event. The administrative Command Center uses the local `/api` HTTP boundary and does not participate in headless policy decisions.
+
+## What and why
+
+MCP Firewall is the policy boundary between an AI agent and MCP tools. A call without a matching allow policy starts BLOCKED, so a new installation fails closed until an administrator explicitly configures access. Every decision is auditable and secrets are redacted before forwarding.
+
+## Dashboard and CLI
+
+The Command Center provides Dashboard, Tool Calls, Policies, MCP Servers, Approvals, Audit Logs and Settings views. Use `mcp-firewall init` for the YAML contract, `mcp-firewall start` for the gateway and dashboard, or `mcp-firewall start --headless` for a STDIO-only gateway without human approvals.
 
 ## Configuration and security
 
