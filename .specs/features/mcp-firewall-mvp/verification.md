@@ -10,7 +10,7 @@
 
 | Source | Opened | Contradiction | Uncovered |
 | --- | --- | --- | --- |
-| `docs/command-center-DESIGN.md` | yes - local file | shell/header/navigation, dedicated admin screens, selectable loading/error states and routed views now match the specified structural direction | interactive API wiring and complete per-screen data arrangements are not implemented |
+| `docs/command-center-DESIGN.md` | yes - local file | shell/header/navigation, dedicated admin screens, selectable loading/error states, routed views and live read collections now match the specified structural direction | authenticated mutations for CRUD/approval, real login wiring and complete per-screen data arrangements are not implemented |
 
 ## Checks
 
@@ -45,6 +45,7 @@ All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 | C29 | Dedicated Command Center admin screens exist | `npm test` / `admin_screens_render_command_center_sections` | `test/mvp.test.js:107` - Login, Tool Calls, Policies and Settings assertions | PASS |
 | C30 | Admin screens expose loading and error states | `npm test` / `admin_screens_expose_loading_and_error_states` | `test/mvp.test.js:108` - `Loading` and `Error` assertions | PASS |
 | C31 | Navigation renders each routed view | `npm test` / `admin_navigation_renders_each_route_view` | `test/mvp.test.js:109` - seven view assertions | PASS |
+| C32 | Live collections render from firewall state | `npm test` / `admin_screens_render_live_collections` | `test/mvp.test.js:110` - tool call, policy, server and empty approval assertions | PASS |
 | C25 | `init` creates default YAML | `npm test` / `cli_init_creates_default_yaml` | `test/mvp.test.js:107` - file content `version: 1` assertion | PASS |
 | C26 | `start` prints required startup output | `npm test` / `cli_start_prints_mvp_startup_output` | `test/mvp.test.js:108` - policy/server counts, running state and URL assertions | PASS |
 | C27 | Headless CLI omits dashboard | `npm test` / `cli_headless_starts_without_dashboard` | `test/mvp.test.js:109` - exit 0, headless marker and no-dashboard assertions | PASS |
@@ -52,7 +53,7 @@ All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 
 ## Coverage
 
-The approved checks coverage join has no `Unproven` members, and all 31 check selectors passed. The `ui` profile recomputation against the binding source found the uncovered UI elements listed above. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
+The approved checks coverage join has no `Unproven` members, and all 32 check selectors passed. The `ui` profile recomputation against the binding source found the uncovered UI elements listed above. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
 
 ## Test policy
 
