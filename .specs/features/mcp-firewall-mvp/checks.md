@@ -1,6 +1,6 @@
 # mcp-firewall-mvp checks
 
-Profile: light
+Profile: ui
 Plan: `.specs/features/mcp-firewall-mvp/plan.md`
 
 O repositório ainda não contém package manifest, task runner, CI ou testes. Por isso, cada proof abaixo nomeia um selector determinístico de teste, sem inventar um comando de execução; o runner concreto e o caminho dos testes serão definidos quando a implementação escolher a stack. Não há `Test policy`: não existe convenção de testes no repositório para responder ao nível de prova.
@@ -133,6 +133,16 @@ Proof: `test::cli_init_refuses_existing_yaml`
 - Claims about a route or status are proven at the boundary selectors above; no route is left without a Coverage row.
 - The repository has no startup assemblies yet; startup configuration coverage is `n/a - no application entry point exists before BUILD`, so no assembly member is silently omitted.
 - The plan's `Impact` has no existing callers or stored rows to re-read; this is covered by the repository inspection and will be revisited if BUILD introduces pre-existing data.
+
+## Test policy
+
+| Code | Required proofs | Coverage expectation |
+| --- | --- | --- |
+| Decision logic | one named behavior test per decision table or state transition | each member named in Coverage has an assertion at the decision layer |
+| Boundary/UI/CLI behavior | one named test at each exposed boundary | each route, command, status and rendered UI obligation has a concrete assertion |
+| Pass-through instrumentation | consumer proof only | no duplicate test required for a single forwarding call |
+
+Evidence: this repository has no earlier test conventions; `test/mvp.test.js` is the first executable test surface. Cost: the 28 named proofs in this feature. Both rows are met by the current proof set; the UI review below additionally checks the binding source.
 
 ## Swept
 

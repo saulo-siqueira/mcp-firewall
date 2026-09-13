@@ -1,10 +1,16 @@
 # mcp-firewall-mvp verification
 
-**Verdict**: PASS (degraded)
-**Profile**: light
+**Verdict**: FAIL
+**Profile**: ui
 **Diff range**: unavailable - workspace is not a Git repository
 **Round**: 1 - full
 **Verifier**: self-verified (degraded - no sub-agent)
+
+## Binding sources
+
+| Source | Opened | Contradiction | Uncovered |
+| --- | --- | --- | --- |
+| `docs/command-center-DESIGN.md` | yes - local file | shell/header/navigation now match the specified structural direction | login/onboarding, dedicated Tool Calls, Policies, MCP Servers and Settings screens; loading/error/empty arrangements and the designed login split are not implemented |
 
 ## Checks
 
@@ -43,7 +49,25 @@ All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 
 ## Coverage
 
-Profile `light` does not recompute Coverage from authority or inject faults. The approved `checks.md` coverage join has no `Unproven` members, and all 28 check selectors passed. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
+The approved checks coverage join has no `Unproven` members, and all 28 check selectors passed. The `ui` profile requires recomputation against the binding source; the comparison found the uncovered UI elements listed above. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
+
+## Test policy
+
+| Row | Files it classifies | Required proof | Expectation met |
+| --- | --- | --- | --- |
+| Decision logic | `src/index.js` | named behavior test per decision/state table | yes |
+| Boundary/UI/CLI behavior | `src/index.js`, `src/cli.js` | named test at exposed boundary | yes |
+| Pass-through instrumentation | gateway forwarding paths | consumer proof only | yes |
+
+## Faults injected
+
+| Mutation | Location | Killed |
+| --- | --- | --- |
+| deny branch changed to allow branch | `src/index.js:70` | yes - `gateway_denies_call_without_target_invocation` |
+| `[REDACTED]` changed to `[MASKED]` | `src/index.js:7` | yes - `secret_scanner_redacts_initial_categories_before_forwarding` |
+| precedence ranks reversed | `src/index.js:61` | yes - `policy_precedence_restrictiveness_table` |
+| logout stopped deleting the session | `src/index.js:105` | yes - `auth_expired_or_logged_out_session_is_rejected` |
+| headless output changed to dashboard output | `src/cli.js:21` | yes - `cli_headless_starts_without_dashboard` |
 
 ## Swept
 
@@ -53,7 +77,7 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 
 - No independent sub-agent was available, so this is a visible degraded verification rather than an independent PASS.
 - No Git repository or base/head range exists, so verification used the current workspace snapshot.
-- Profile `light` does not perform UI binding-source comparison or fault injection; the design source remains a known unverified visual surface under this profile.
+- The UI binding-source comparison was performed under `ui` and found the gaps above.
 
 ## Gate
 
