@@ -62,3 +62,12 @@ test('dashboard API returns metrics JSON and setup authenticates the new admin',
   const dashboard = firewall.api('GET', '/api/dashboard', {}, setup.body.session.id);
   expect(dashboard.status).toBe(200); expect(dashboard.body.total_tool_calls).toBe(0); expect(dashboard.body.recent_calls).toEqual([]);
 }));
+
+test('Fastify preserves administrative collection filters and detail routes', async () => withCleanFirewall(async () => {
+  const setup = firewall.api('POST', '/api/auth/setup', { name: 'Admin', email: 'filter@example.com', password: 'pw', confirmPassword: 'pw' });
+  const session = setup.body.session.id;
+  firewall.audit.set('one', { id: 'one', agent: 'a', server: 's', tool: 'one', decision: 'ALLOW', arguments: {}, duration: 1, result: null, created_at: new Date().toISOString() });
+  firewall.audit.set('two', { id: 'two', agent: 'a', server: 's', tool: 'two', decision: 'DENY', arguments: {}, duration: 1, result: null, created_at: new Date().toISOString() });
+  const response = await app.inject({ method: 'GET', url: '/api/tool-calls?tool=one', headers: { 'x-session-id': session } });
+  expect(response.statusCode).toBe(200); expect(response.json()).toHaveLength(1); expect(response.json()[0].id).toBe('one');
+}));
