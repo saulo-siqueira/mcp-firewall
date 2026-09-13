@@ -9,7 +9,7 @@
   "scripts": {
     "test": "npm run test:node && vitest run",
     "test:node": "node --test test/mvp.test.js",
-    "dev": "tsx src/server.ts",
+    "dev": "npm run build && tsx src/server.ts",
     "build": "tsc --noEmit && vite build",
     "test:e2e": "playwright test",
     "test:integration": "RUN_CONTAINERS=1 vitest run test/integration"

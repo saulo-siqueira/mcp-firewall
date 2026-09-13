@@ -9,6 +9,7 @@ const TRANSPORTS = ['stdio', 'http'];
 const APPROVAL_STATES = ['PENDING', 'APPROVED', 'REJECTED'];
 const REDACTED = '[REDACTED]';
 const stage = (name, work) => { const span = trace.getTracer('mcp-firewall').startSpan(name); try { return work(); } finally { span.end(); } };
+const stageAsync = async (name, work) => { const span = trace.getTracer('mcp-firewall').startSpan(name); try { return await work(); } finally { span.end(); } };
 const yamlScalar = (value) => typeof value === 'boolean' ? String(value) : JSON.stringify(String(value ?? ''));
 
 export const createMcpCall = ({ agent, server, tool, arguments: args = {} }) => ({
@@ -135,7 +136,7 @@ export class Firewall {
       approval.audit_id = base.id; this.approvals.set(approval.id, approval); this.persist(); return finish(null, null) && { decision: 'REQUIRE_APPROVAL', approval, audit: base };
     }
     const server = this.servers.get(call.server); let result;
-    try { if (!server) throw new Error('MCP server not configured'); result = await stage('mcp.forward', () => server.handler ? server.handler(call) : invokeTarget(server, call)); return finish(result); }
+    try { if (!server) throw new Error('MCP server not configured'); result = await stageAsync('mcp.forward', () => server.handler ? server.handler(call) : invokeTarget(server, call)); return finish(result); }
     catch (error) { return finish(null, { code: 'TARGET_ERROR', message: error.message }); }
   }
 
@@ -208,11 +209,11 @@ export class Firewall {
       const approvalId = decodeURIComponent(approvalPath[1]);
       if (approvalPath[2] === 'reject') {
         try { return { status: 200, body: this.reject(approvalId, this.sessionUser(sessionId)?.name || 'admin') }; }
-        catch { return { status: 404, body: { error: 'NOT_FOUND' } }; }
+        catch (error) { return { status: error.message === 'approval is not pending' ? 409 : 404, body: { error: error.message === 'approval is not pending' ? 'APPROVAL_NOT_PENDING' : 'NOT_FOUND' } }; }
       }
       return this.approve(approvalId, this.sessionUser(sessionId)?.name || 'admin')
         .then((result) => ({ status: 200, body: result }))
-        .catch(() => ({ status: 409, body: { error: 'APPROVAL_NOT_PENDING' } }));
+        .catch((error) => ({ status: error.message === 'approval is not pending' ? 409 : 404, body: { error: error.message === 'approval is not pending' ? 'APPROVAL_NOT_PENDING' : 'NOT_FOUND' } }));
     }
     return { status: 404, body: { error: 'NOT_FOUND' } };
   }
