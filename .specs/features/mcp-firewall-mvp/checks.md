@@ -102,6 +102,9 @@ Proof: `test::admin_screens_render_live_collections`
 **C33** - A API administrativa cria a conta inicial, autentica a sessão e exige essa sessão para mutar políticas e MCP Servers (ADM-01, API boundary)
 Proof: `test::admin_api_authenticates_and_mutates_resources`
 
+**C34** - O formato YAML v1 é carregável pelo runtime e preserva match, ação, transporte e configuração inicial do servidor (CLI-01, configuration boundary)
+Proof: `test::config_yaml_loads_policy_and_server_contract`
+
 ### S5 - Operação por CLI e headless · proof selectors nomeados · escopo de arquivos a definir no build
 
 **C25** - `mcp-firewall init` cria `mcp-firewall.yaml` quando o arquivo não existe (CLI-01, AC 25)
@@ -135,6 +138,7 @@ Proof: `test::cli_init_refuses_existing_yaml`
 | Command Center navigation views (7) | `dashboard` -> C31 · `tool-calls` -> C31 · `policies` -> C31 · `mcp-servers` -> C31 · `approvals` -> C31 · `audit-logs` -> C31 · `settings` -> C31 | - |
 | Live administrative collections (4) | Tool Calls -> C32 · Policies -> C32 · MCP Servers -> C32 · Audit Logs -> C32 | - |
 | Authenticated administrative mutations (5) | setup/login -> C33 · policy create/update/delete -> C33 · server create -> C33 · approval reject -> C33 · logout rejection -> C33 | - |
+| YAML configuration members (4) | policy match -> C34 · policy action -> C34 · server transport -> C34 · server command -> C34 | - |
 | `tools/call` surface statuses (4) | `200` forwarded -> C2 · `403` denied -> C3 · `409` approval unavailable -> C14 · `502` transport failure -> C6 | - |
 | `POST /api/auth/setup` statuses (3) | `201` -> C15 · `400` -> C15 · `409`/`422` -> C15 | - |
 | `POST /api/auth/login` statuses (2) | `200` -> C16 · `401`/`422` -> C17 | - |
@@ -162,7 +166,7 @@ Proof: `test::cli_init_refuses_existing_yaml`
 | Boundary/UI/CLI behavior | one named test at each exposed boundary | each route, command, status and rendered UI obligation has a concrete assertion |
 | Pass-through instrumentation | consumer proof only | no duplicate test required for a single forwarding call |
 
-Evidence: this repository has no earlier test conventions; `test/mvp.test.js` is the first executable test surface. Cost: the 33 named proofs in this feature. Both rows are met by the current proof set; the UI review below additionally checks the binding source.
+Evidence: this repository has no earlier test conventions; `test/mvp.test.js` is the first executable test surface. Cost: the 34 named proofs in this feature. Both rows are met by the current proof set; the UI review below additionally checks the binding source.
 
 ## Swept
 

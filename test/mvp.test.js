@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { Firewall, createApiServer, createMcpCall } from '../src/index.js';
+import { Firewall, createApiServer, createMcpCall, parseConfigYaml } from '../src/index.js';
 
 const context = (overrides = {}) => ({
   agent: 'claude-code', server: 'filesystem', tool: 'filesystem.read',
@@ -51,6 +51,7 @@ test('gateway_uses_streamable_http_transport', async () => {
   const firewall = new Firewall({ servers: [{ name: 'filesystem', transport: 'http', handler: async () => 'http' }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] });
   assert.equal((await firewall.handleCall(context())).result, 'http');
 });
+test('config_yaml_loads_policy_and_server_contract', async () => { const config = parseConfigYaml('version: 1\npolicies:\n  - name: read\n    match:\n      tool: filesystem.*\n    action: allow\n    enabled: true\nmcp_servers:\n  - name: files\n    transport: stdio\n    command: node\n'); assert.equal(config.policies[0].match.tool, 'filesystem.*'); assert.equal(config.policies[0].action, 'allow'); assert.equal(config.mcp_servers[0].transport, 'stdio'); });
 
 test('secret_scanner_redacts_initial_categories_before_forwarding', async () => {
   let received;

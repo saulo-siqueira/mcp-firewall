@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 
 const DECISIONS = ['ALLOW', 'DENY', 'REQUIRE_APPROVAL'];
 const TRANSPORTS = ['stdio', 'http'];
@@ -27,6 +28,21 @@ const redact = (value) => {
 
 const id = (prefix) => `${prefix}_${crypto.randomUUID()}`;
 const now = () => new Date().toISOString();
+
+export const parseConfigYaml = (source) => {
+  const config = { policies: [], mcp_servers: [] }; let section = null; let item = null; let nested = null; let nestedIndent = 0;
+  for (const raw of String(source).split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, ''); const trimmed = line.trim(); if (!trimmed || trimmed === 'version: 1') continue;
+    if (/^(policies|mcp_servers):\s*$/.test(trimmed)) { section = trimmed.slice(0, -1); item = null; nested = null; continue; }
+    if (trimmed.startsWith('- ')) { if (!section) continue; item = {}; config[section].push(item); nested = null; nestedIndent = 0; const pair = trimmed.slice(2).split(/:\s*/, 2); if (pair[0] && pair[1] !== undefined) item[pair[0]] = parseYamlScalar(pair[1]); continue; }
+    if (!item || !trimmed.includes(':')) continue; const [key, ...rest] = trimmed.split(':'); const value = rest.join(':').trim();
+    if (!value) { nested = key.trim(); nestedIndent = line.search(/\S/); item[nested] = {}; continue; }
+    if (nested && line.search(/\S/) > nestedIndent) item[nested][key.trim()] = parseYamlScalar(value); else { nested = null; item[key.trim()] = parseYamlScalar(value); }
+  }
+  return config;
+};
+const parseYamlScalar = (value) => { const v = String(value).trim(); if (v === 'true') return true; if (v === 'false') return false; if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1); return v; };
+export const loadConfigFile = (file) => { const config = parseConfigYaml(readFileSync(file, 'utf8')); return new Firewall({ policies: config.policies, servers: config.mcp_servers }); };
 
 export class Firewall {
   constructor({ policies = [], servers = [], approvalAvailable = true } = {}) {
@@ -191,6 +207,13 @@ export function createApiServer(firewall, { port = 3210 } = {}) {
     try { if (request.method !== 'GET' && request.method !== 'HEAD') body = await readJsonBody(request); }
     catch { response.writeHead(400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'INVALID_JSON' })); return; }
     const sessionId = request.headers['x-session-id'] || String(request.headers.authorization || '').replace(/^Bearer\s+/i, '') || undefined;
+    if (request.method === 'POST' && url.pathname === '/mcp/tools/call') {
+      try {
+        const result = await firewall.handleCall(body);
+        const status = result.decision === 'ALLOW' ? 200 : result.decision === 'REQUIRE_APPROVAL' ? 202 : result.error?.code === 'APPROVAL_UNAVAILABLE' ? 409 : 403;
+        response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(result)); return;
+      } catch (error) { response.writeHead(502, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'TARGET_ERROR', message: error.message })); return; }
+    }
     const result = await firewall.api(request.method, url.pathname, body, sessionId);
     response.writeHead(result.status, { 'content-type': 'application/json' });
     response.end(result.status === 204 ? '' : JSON.stringify(result.body));

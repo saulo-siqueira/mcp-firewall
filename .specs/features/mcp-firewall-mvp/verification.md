@@ -3,7 +3,7 @@
 **Verdict**: PASS
 **Profile**: ui
 **Diff range**: `818ffaa..HEAD`
-**Round**: 2 - full
+**Round**: 3 - full
 **Verifier**: self-verified (degraded - no sub-agent)
 
 ## Binding sources
@@ -14,7 +14,7 @@
 
 ## Checks
 
-All 33 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. Evidence below cites the assertion that settles each check.
+All 34 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. Evidence below cites the assertion that settles each check.
 
 | Check | Claim | Proof run | Evidence | Result |
 | --- | --- | --- | --- | --- |
@@ -47,6 +47,7 @@ All 33 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 | C31 | Navigation renders each routed view | `npm test` / `admin_navigation_renders_each_route_view` | `test/mvp.test.js:109` - seven view assertions | PASS |
 | C32 | Live collections render from firewall state | `npm test` / `admin_screens_render_live_collections` | `test/mvp.test.js:110` - tool call, policy, server and empty approval assertions | PASS |
 | C33 | Administrative API authenticates and protects mutations | `npm test` / `admin_api_authenticates_and_mutates_resources` | `test/mvp.test.js:111` - setup/login, policy CRUD, server creation, approval rejection and logout assertions | PASS |
+| C34 | YAML v1 configuration is parsed into runtime contracts | `npm test` / `config_yaml_loads_policy_and_server_contract` | `test/mvp.test.js:55` - match, action, transport and command assertions | PASS |
 | C25 | `init` creates default YAML | `npm test` / `cli_init_creates_default_yaml` | `test/mvp.test.js:107` - file content `version: 1` assertion | PASS |
 | C26 | `start` prints required startup output | `npm test` / `cli_start_prints_mvp_startup_output` | `test/mvp.test.js:108` - policy/server counts, running state and URL assertions | PASS |
 | C27 | Headless CLI omits dashboard | `npm test` / `cli_headless_starts_without_dashboard` | `test/mvp.test.js:109` - exit 0, headless marker and no-dashboard assertions | PASS |
@@ -54,7 +55,7 @@ All 33 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 
 ## Coverage
 
-The approved checks coverage join has no `Unproven` members, and all 33 check selectors passed. The `ui` profile recomputation against the binding source found no uncovered MVP elements. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
+The approved checks coverage join has no `Unproven` members, and all 34 check selectors passed. The `ui` profile recomputation against the binding source found no uncovered MVP elements. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
 
 ## Test policy
 
@@ -74,6 +75,14 @@ The approved checks coverage join has no `Unproven` members, and all 33 check se
 | logout stopped deleting the session | `src/index.js:105` | yes - `auth_expired_or_logged_out_session_is_rejected` |
 | headless output changed to dashboard output | `src/cli.js:21` | yes - `cli_headless_starts_without_dashboard` |
 
+## Runtime boundary evidence
+
+| Boundary | Command | Evidence |
+| --- | --- | --- |
+| MCP allow | `curl -X POST http://127.0.0.1:3210/mcp/tools/call ... filesystem.read` | HTTP `200`, body decision `ALLOW` |
+| MCP deny | `curl -X POST http://127.0.0.1:3210/mcp/tools/call ... filesystem.delete` | HTTP `403`, body decision `DENY` and `POLICY_DENIED` |
+| Docker | `docker compose config --quiet` | exit `0` |
+
 ## Swept
 
 The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C25, C28), failure modes (C3, C10, C14, C17, C26-C28), idempotency (C12, C13, C18, C28), authorization (C18, C23), concurrency (C12, C13), data lifecycle (`n/a` by approved policy), dependency failure (C6, C7, C14, C26, C27), state transitions (C5, C11-C13), and observability (C9, C21, C22).
@@ -86,7 +95,7 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 
 ## Gate
 
-`npm test` - 33 passed, 0 failed
+`npm test` - 34 passed, 0 failed
 
 `python3 .codex/skills/tlc-spec-lean/scripts/validate_plan.py mcp-firewall-mvp --root .` - 0 errors
 

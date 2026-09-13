@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { access, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
-import { Firewall } from './index.js';
+import { Firewall, loadConfigFile } from './index.js';
 
 export async function init(directory = process.cwd()) {
   const file = join(directory, 'mcp-firewall.yaml');
@@ -17,7 +18,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     if (command === 'init') { await init(); console.log('Created mcp-firewall.yaml'); }
     else if (command === 'start') {
-      const output = new Firewall().startOutput();
+      const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml')) : new Firewall();
+      const output = firewall.startOutput();
       console.log(flag === '--headless' ? output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled') : output);
     }
     else { console.error('Usage: mcp-firewall init | start [--headless]'); process.exitCode = 1; }
