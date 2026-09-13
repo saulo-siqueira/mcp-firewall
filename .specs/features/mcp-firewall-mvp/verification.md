@@ -2,9 +2,9 @@
 
 **Verdict**: PASS (pending independent reviewer sign-off)
 **Profile**: ui
-**Diff range**: `818ffaa..35e7230`
-**Round**: 5 - independent review in progress
-**Verifier**: independent sub-agent review requested; Docker daemon unavailable in the verification environment
+**Diff range**: `baf2a75..5f2d039`
+**Round**: 6 - independent review in progress
+**Verifier**: independent sub-agent review requested; Docker daemon and listener permissions may be unavailable in the verification environment
 
 ## Binding sources
 
@@ -89,9 +89,9 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 
 ## Limitations
 
-- No independent sub-agent was available, so this is a visible degraded verification rather than an independent PASS.
+- The independent reviewer must confirm the final verdict.
+- Docker/container and browser listener execution may be unavailable in the local verification environment.
 - The diff range is local to the imported repository; no remote CI run was requested.
-- Verification is self-verified because no independent sub-agent was available.
 
 ## Gate
 
