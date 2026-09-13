@@ -42,7 +42,7 @@ const invokeStdio = (server, call) => new Promise((resolve, reject) => {
 const invokeTarget = async (server, call) => {
   if (server.transport === 'stdio') return invokeStdio(server, call);
   if (!server.url) throw new Error('http server url is not configured');
-  if (!server.sessionId) { const initialized = await fetch(server.url, { method: 'POST', headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18', ...(server.headers || {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: id('mcp'), method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mcp-firewall', version: '0.1.0' } } }) }); if (!initialized.ok) throw new Error(`http MCP initialize returned ${initialized.status}`); server.sessionId = initialized.headers.get('mcp-session-id') || undefined; }
+  if (!server.sessionId) { const initialized = await fetch(server.url, { method: 'POST', headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18', ...(server.headers || {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: id('mcp'), method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mcp-firewall', version: '0.1.0' } } }) }); if (!initialized.ok) throw new Error(`http MCP initialize returned ${initialized.status}`); server.sessionId = initialized.headers.get('mcp-session-id') || undefined; if (server.sessionId) await fetch(server.url, { method: 'POST', headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18', 'Mcp-Session-Id': server.sessionId, ...(server.headers || {}) }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) }); }
   const response = await fetch(server.url, { method: 'POST', headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18', ...(server.sessionId ? { 'Mcp-Session-Id': server.sessionId } : {}), ...(server.headers || {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: id('mcp'), method: 'tools/call', params: { name: call.tool, arguments: call.arguments } }) });
   if (!response.ok) throw new Error(`http MCP server returned ${response.status}`); const sessionId = response.headers.get('mcp-session-id'); if (sessionId) server.sessionId = sessionId; const text = await response.text(); if (response.headers.get('content-type')?.includes('text/event-stream')) { const events = text.split(/\r?\n\r?\n/).flatMap((block) => block.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim())).filter(Boolean); return JSON.parse(events.at(-1) || '{}'); } return JSON.parse(text || '{}');
 };
@@ -205,10 +205,10 @@ export class Firewall {
     if (approvalPath && method === 'POST') {
       const approvalId = decodeURIComponent(approvalPath[1]);
       if (approvalPath[2] === 'reject') {
-        try { return { status: 200, body: this.reject(approvalId, body.approver || 'admin') }; }
+        try { return { status: 200, body: this.reject(approvalId, this.sessionUser(sessionId)?.name || 'admin') }; }
         catch { return { status: 404, body: { error: 'NOT_FOUND' } }; }
       }
-      return this.approve(approvalId, body.approver || 'admin')
+      return this.approve(approvalId, this.sessionUser(sessionId)?.name || 'admin')
         .then((result) => ({ status: 200, body: result }))
         .catch(() => ({ status: 409, body: { error: 'APPROVAL_NOT_PENDING' } }));
     }
