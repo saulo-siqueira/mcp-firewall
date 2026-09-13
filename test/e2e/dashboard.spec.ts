@@ -1,2 +1,3 @@
 import { test, expect } from '@playwright/test';
 test('dashboard route is reachable', async ({ page }) => { await page.goto('/api/dashboard?view=login'); await expect(page).toHaveTitle(/Login|MCP Firewall/); });
+test('admin command center exposes resource views', async ({ page }) => { await page.goto('/'); await expect(page.getByText('MCP Firewall')).toBeVisible(); await expect(page.getByRole('link', { name: 'Policies' })).toBeVisible(); await expect(page.getByRole('link', { name: 'MCP Servers' })).toBeVisible(); await expect(page.getByRole('link', { name: 'Approvals' })).toBeVisible(); await expect(page.getByRole('link', { name: 'Audit Logs' })).toBeVisible(); });
