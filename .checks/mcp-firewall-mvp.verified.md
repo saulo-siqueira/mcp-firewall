@@ -2,7 +2,7 @@
 
 **Verdict**: PASS
 **Profile**: ui
-**Diff range**: `86ccab3..c3042be`
+**Diff range**: `86ccab3..bb2c512`
 **Binding sources**: `docs/mcp-firewall-prd.md`, `.specs/features/mcp-firewall-mvp/plan.md`, `docs/command-center-DESIGN.md`
 
 ## Gate
