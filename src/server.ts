@@ -2,15 +2,25 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import fastifyStatic from '@fastify/static';
 import { Firewall, handleMcpMessage, loadConfigFile } from './index.js';
 import { createDatabase } from './db/client.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const root = process.cwd();
 const configPath = join(root, 'mcp-firewall.yaml');
 const firewall = existsSync(configPath) ? loadConfigFile(configPath, { storagePath: process.env.STORAGE_PATH || join(root, '.mcp-firewall-data.json') }) : new Firewall({ storagePath: process.env.STORAGE_PATH || join(root, '.mcp-firewall-data.json') });
 const database = createDatabase();
 const mcpServer = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capabilities: { tools: {} } });
+// Keep the SDK request handlers as the canonical MCP contract for transports added later.
+mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
+mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const params: any = request.params;
+  const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER, tool: params.name, arguments: params.arguments || {} });
+  if (result.error) throw new Error(result.error.message);
+  return { content: [{ type: 'text', text: JSON.stringify(result.result ?? null) }] };
+});
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
 const callSchema = z.object({ agent: z.string().optional(), server: z.string().optional(), tool: z.string().optional(), arguments: z.record(z.string(), z.unknown()).optional(), method: z.string().optional(), params: z.record(z.string(), z.unknown()).optional() });
 
@@ -23,3 +33,5 @@ app.get('/api/mcp-servers', async () => [...firewall.servers.values()]);
 const port = Number(process.env.PORT || 3210);
 if (process.env.NODE_ENV !== 'test') app.listen({ port, host: '0.0.0.0' }).catch((error) => { app.log.error(error); process.exit(1); });
 export { app, firewall };
+if (existsSync(join(root, 'dist'))) await app.register(fastifyStatic, { root: join(root, 'dist'), wildcard: true });
+app.get('/', async (_request, reply) => reply.sendFile('index.html'));
