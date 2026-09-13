@@ -18,6 +18,7 @@ describe.skipIf(!process.env.RUN_CONTAINERS)('PostgreSQL integration', () => {
       expect(loaded.policies[0].name).toBe('p');
       expect(loaded.servers[0].transport).toBe('http');
       expect(loaded.audit).toHaveLength(1);
+      expect(loaded.audit[0].id).toBe('11111111-1111-4111-8111-111111111111');
       expect(loaded.audit[0].approved_by).toBe('Admin');
     } finally { await pool.end(); await container.stop(); }
   }, 120_000);
