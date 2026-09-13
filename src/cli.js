@@ -20,10 +20,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     else if (command === 'start') {
       const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml'), { storagePath: join(process.cwd(), '.mcp-firewall-data.json') }) : new Firewall({ storagePath: join(process.cwd(), '.mcp-firewall-data.json') });
       const output = firewall.startOutput();
-      console.log(flag === '--headless' ? output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled') : output);
+      if (flag === '--headless') console.error(output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled'));
+      else console.log(output);
       if (extra !== '--check') {
         const { createApiServer, startStdioGateway } = await import('./index.js');
-        if (flag === '--headless') { startStdioGateway(firewall, process.stdin, process.stdout, { agent: process.env.MCP_AGENT || 'cli', server: process.env.MCP_SERVER }); console.log('Headless MCP gateway listening on STDIO'); }
+        if (flag === '--headless') { startStdioGateway(firewall, process.stdin, process.stdout, { agent: process.env.MCP_AGENT || 'cli', server: process.env.MCP_SERVER }); console.error('Headless MCP gateway listening on STDIO'); }
         else { const port = Number(process.env.PORT || 3210); createApiServer(firewall).listen(port, '0.0.0.0', () => console.log(`Gateway listening on port ${port}`)); }
       }
     }

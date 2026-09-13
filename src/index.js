@@ -72,7 +72,7 @@ export const handleMcpMessage = async (firewall, message, gatewayContext = {}) =
   const result = await firewall.handleCall({ agent: params.agent || message.agent || gatewayContext.agent, server: params.server || gatewayContext.server, tool: params.name || params.tool, arguments: params.arguments || {} });
   return result.error ? { error: { code: -32000, message: result.error.message, data: result } } : result;
 };
-export const startStdioGateway = (firewall, input = process.stdin, output = process.stdout, gatewayContext = {}) => { let buffer = ''; input.setEncoding('utf8'); input.on('data', async (chunk) => { buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop(); for (const line of lines.filter(Boolean)) { try { const message = JSON.parse(line); const payload = await handleMcpMessage(firewall, message, gatewayContext); if (message.id !== undefined && payload !== null) output.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: payload, error: payload.error })}\n`); } catch (error) { output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } })}\n`); } } }); return firewall; };
+export const startStdioGateway = (firewall, input = process.stdin, output = process.stdout, gatewayContext = {}) => { let buffer = ''; input.setEncoding('utf8'); input.on('data', async (chunk) => { buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop(); for (const line of lines.filter(Boolean)) { try { const message = JSON.parse(line); const payload = await handleMcpMessage(firewall, message, gatewayContext); if (message.id !== undefined && payload !== null) { const response = payload.error ? { jsonrpc: '2.0', id: message.id, error: payload.error } : { jsonrpc: '2.0', id: message.id, result: payload }; output.write(`${JSON.stringify(response)}\n`); } } catch (error) { output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } })}\n`); } } }); return firewall; };
 
 export class Firewall {
   constructor({ policies = [], servers = [], approvalAvailable = true, storagePath = null, configPath = null, configAuthoritative = false } = {}) {
@@ -160,6 +160,7 @@ export class Firewall {
   }
 
   authorize(sessionId) { const session = this.sessions.get(sessionId); if (!session || session.expires_at <= Date.now()) { if (session) { this.sessions.delete(sessionId); this.persist(); } return false; } return true; }
+  sessionUser(sessionId) { const session = this.sessions.get(sessionId); return [...this.users.values()].find((user) => user.id === session?.userId); }
   logout(sessionId) { this.sessions.delete(sessionId); this.persist(); }
 
   api(method, path, body = {}, sessionId) {
