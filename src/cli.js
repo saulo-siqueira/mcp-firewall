@@ -23,7 +23,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log(flag === '--headless' ? output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled') : output);
       if (extra !== '--check') {
         const { createApiServer } = await import('./index.js');
-        createApiServer(firewall).listen(3210, '0.0.0.0', () => console.log('Gateway listening on port 3210'));
+        const port = Number(process.env.PORT || 3210);
+        createApiServer(firewall).listen(port, '0.0.0.0', () => console.log(`Gateway listening on port ${port}`));
       }
     }
     else { console.error('Usage: mcp-firewall init | start [--headless]'); process.exitCode = 1; }

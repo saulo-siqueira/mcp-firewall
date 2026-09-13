@@ -66,12 +66,12 @@ export class Firewall {
     this.policies = new Map(); this.servers = new Map(); this.users = new Map(); this.sessions = new Map();
     this.approvals = new Map(); this.audit = new Map(); this.approvalAvailable = approvalAvailable;
     if (this.storagePath && existsSync(this.storagePath)) this.restore(JSON.parse(readFileSync(this.storagePath, 'utf8')));
-    policies.forEach((policy) => this.addPolicy(policy));
-    servers.forEach((server) => this.addServer(server));
+    policies.forEach((policy) => { if (!this.policies.has(policy.name)) this.addPolicy(policy); });
+    servers.forEach((server) => { if (!this.servers.has(server.name)) this.addServer(server); });
   }
 
-  persist() { if (!this.storagePath) return; writeFileSync(this.storagePath, JSON.stringify({ policies: [...this.policies.values()], servers: [...this.servers.values()].map(({ handler, ...server }) => server), users: [...this.users.values()], approvals: [...this.approvals.values()], audit: [...this.audit.values()] }, null, 2)); }
-  restore(state) { for (const policy of state.policies || []) this.policies.set(policy.name, policy); for (const server of state.servers || []) this.servers.set(server.name, server); for (const user of state.users || []) this.users.set(user.email, user); for (const approval of state.approvals || []) this.approvals.set(approval.id, approval); for (const event of state.audit || []) this.audit.set(event.id, event); }
+  persist() { if (!this.storagePath) return; writeFileSync(this.storagePath, JSON.stringify({ policies: [...this.policies.values()], servers: [...this.servers.values()].map(({ handler, ...server }) => server), users: [...this.users.values()], sessions: [...this.sessions.values()], approvals: [...this.approvals.values()], audit: [...this.audit.values()] }, null, 2)); }
+  restore(state) { for (const policy of state.policies || []) this.policies.set(policy.name, policy); for (const server of state.servers || []) this.servers.set(server.name, server); for (const user of state.users || []) this.users.set(user.email, user); for (const session of state.sessions || []) this.sessions.set(session.id, session); for (const approval of state.approvals || []) this.approvals.set(approval.id, approval); for (const event of state.audit || []) this.audit.set(event.id, event); }
 
   addPolicy(input) {
     const name = input?.name || id('policy');
@@ -89,6 +89,7 @@ export class Firewall {
   addServer(input) {
     const transport = input?.transport || 'stdio';
     if (!input?.name || !TRANSPORTS.includes(transport)) throw new Error('transport must be stdio or http');
+    if (this.servers.has(input.name)) { const error = new Error('server already exists'); error.code = 'CONFLICT'; throw error; }
     const server = { status: input.status || 'Disconnected', transport, ...input };
     this.servers.set(server.name, server); this.persist(); return server;
   }
@@ -102,7 +103,7 @@ export class Firewall {
 
   async handleCall(input) {
     const evaluated = this.evaluate(input); const call = { ...evaluated.call, arguments: redact(evaluated.call.arguments) };
-    const started = Date.now(); const base = { id: id('audit'), agent: call.agent, server: call.server, tool: call.tool, arguments: call.arguments, decision: evaluated.decision, policy: evaluated.policy, duration: 0, result: null, created_at: now() };
+    const started = Date.now(); const base = input._audit_id && this.audit.get(input._audit_id) ? this.audit.get(input._audit_id) : { id: id('audit'), agent: call.agent, server: call.server, tool: call.tool, arguments: call.arguments, decision: evaluated.decision, policy: evaluated.policy, duration: 0, result: null, created_at: now() };
     const finish = (result, error = null) => { base.duration = Date.now() - started; base.result = result ?? error?.message ?? null; this.audit.set(base.id, base); this.persist(); return { ...result && typeof result === 'object' ? result : {}, decision: evaluated.decision, result, error, audit: base }; };
     if (evaluated.decision === 'DENY') return finish(null, { code: 'POLICY_DENIED', message: 'MCP call denied by policy' });
     if (evaluated.decision === 'REQUIRE_APPROVAL' && !input._approved) {
@@ -118,12 +119,12 @@ export class Firewall {
   async approve(approvalId, approver) {
     const approval = this.approvals.get(approvalId); if (!approval || approval.status !== 'PENDING') throw new Error('approval is not pending');
     approval.status = 'APPROVED'; approval.approved_by = approver; approval.approved_at = now(); this.persist();
-    const result = await this.handleCall({ ...approval.call, _approved: true });
-    const audit = [...this.audit.values()].at(-1); if (audit) { audit.approved_by = approver; audit.approved_at = approval.approved_at; }
+    const result = await this.handleCall({ ...approval.call, _approved: true, _audit_id: approval.audit_id });
+    const audit = this.audit.get(approval.audit_id); if (audit) { audit.approved_by = approver; audit.approved_at = approval.approved_at; this.persist(); }
     return { ...result, approval };
   }
 
-  reject(approvalId, rejecter) { const approval = this.approvals.get(approvalId); if (!approval || approval.status !== 'PENDING') throw new Error('approval is not pending'); approval.status = 'REJECTED'; approval.rejected_by = rejecter; approval.rejected_at = now(); const audit = this.audit.get(approval.audit_id); if (audit) { audit.rejected_by = rejecter; audit.rejected_at = approval.rejected_at; } this.persist(); return { decision: 'DENY', approval }; }
+  reject(approvalId, rejecter) { const approval = this.approvals.get(approvalId); if (!approval || approval.status !== 'PENDING') throw new Error('approval is not pending'); approval.status = 'REJECTED'; approval.rejected_by = rejecter; approval.rejected_at = now(); const audit = this.audit.get(approval.audit_id); if (audit) { audit.decision = 'DENY'; audit.rejected_by = rejecter; audit.rejected_at = approval.rejected_at; } this.persist(); return { decision: 'DENY', approval }; }
 
   setupAdmin({ name, email, password, confirmPassword }) {
     if (this.users.size) { const error = new Error('admin already exists'); error.code = 'CONFLICT'; throw error; }
@@ -165,7 +166,7 @@ export class Firewall {
     const policyPath = path.match(/^\/api\/policies\/([^/]+)$/);
     if (policyPath && method === 'PATCH') {
       try { return { status: 200, body: this.updatePolicy(decodeURIComponent(policyPath[1]), body) }; }
-      catch (error) { return { status: 404, body: { error: 'NOT_FOUND' } }; }
+      catch (error) { return { status: error.message === 'policy not found' ? 404 : 422, body: { error: error.message } }; }
     }
     if (policyPath && method === 'DELETE') {
       if (!this.deletePolicy(decodeURIComponent(policyPath[1]))) return { status: 404, body: { error: 'NOT_FOUND' } };
@@ -173,7 +174,7 @@ export class Firewall {
     }
     if (method === 'POST' && path === '/api/mcp-servers') {
       try { return { status: 201, body: this.addServer(body) }; }
-      catch (error) { return { status: 422, body: { error: error.message } }; }
+      catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
     }
     const approvalPath = path.match(/^\/api\/approvals\/([^/]+)\/(approve|reject)$/);
     if (approvalPath && method === 'POST') {
@@ -192,13 +193,13 @@ export class Firewall {
   start({ headless = false } = {}) { return { headless, running: true, dashboard: headless ? null : 'http://localhost:3210' }; }
   startOutput() { return `MCP Firewall v${'0.1.0'}\n\nPolicies loaded: ${this.policies.size}\nMCP servers: ${this.servers.size}\n\nGateway running.\nDashboard: http://localhost:3210`; }
 
-  dashboardHtml() { const allowed = [...this.audit.values()].filter((x) => x.decision === 'ALLOW').length; const blocked = [...this.audit.values()].filter((x) => x.decision === 'DENY').length; const approvals = [...this.audit.values()].filter((x) => x.decision === 'REQUIRE_APPROVAL').length; const recent = [...this.audit.values()].slice(-5).reverse().map((x) => `<article>${x.tool} · ${x.decision}</article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'; const active = [...this.policies.values()].filter((x) => x.enabled).map((x) => `<article>${x.name} · ${x.action}</article>`).join('') || '<p class="empty">No active policies.</p>'; const secrets = [...this.audit.values()].filter((x) => JSON.stringify(x.arguments).includes(REDACTED)).length; return shell('Dashboard', `<h1>Dashboard</h1><section class="metrics"><b>Total Tool Calls ${this.audit.size}</b><b>Allowed ${allowed}</b><b>Blocked ${blocked}</b><b>Requires Approval ${approvals}</b></section><section class="workspace-grid"><div><h2>Recent Calls</h2>${recent}</div><div><h2>Active Policies</h2>${active}</div><div><h2>Secrets Intercepted</h2><p>${secrets}</p></div></section>`); }
+  dashboardHtml() { const events = [...this.audit.values()]; const allowed = events.filter((x) => x.decision === 'ALLOW').length; const blocked = events.filter((x) => x.decision === 'DENY').length; const approvals = events.filter((x) => x.decision === 'REQUIRE_APPROVAL').length; const recent = events.slice(-5).reverse().map((x) => `<article>${x.tool} · ${x.decision}</article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'; const active = [...this.policies.values()].filter((x) => x.enabled).map((x) => `<article>${x.name} · ${x.action}</article>`).join('') || '<p class="empty">No active policies.</p>'; const counts = Object.entries(events.reduce((all, event) => ({ ...all, [event.tool]: (all[event.tool] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([tool, count]) => `<article>${tool} · ${count}</article>`).join('') || '<p class="empty">No tools used yet.</p>'; const timeline = events.slice(-10).map((x) => `<article>${x.created_at} · ${x.decision}</article>`).join('') || '<p class="empty">No activity yet.</p>'; const secrets = events.filter((x) => JSON.stringify(x.arguments).includes(REDACTED)).length; return shell('Dashboard', `<h1>Dashboard</h1><section class="metrics"><b>Total Tool Calls ${events.length}</b><b>Allowed ${allowed}</b><b>Blocked ${blocked}</b><b>Requires Approval ${approvals}</b></section><section class="workspace-grid"><div><h2>Recent Calls</h2>${recent}<h2>Calls over time</h2>${timeline}</div><div><h2>Active Policies</h2>${active}<h2>Most used tools</h2>${counts}</div><div><h2>Secrets Intercepted</h2><p>${secrets}</p></div></section>`); }
   auditDetailHtml(auditId) { const event = this.audit.get(auditId); return shell('Audit Logs', `<h1>Audit Logs</h1><pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>`); }
   approvalsHtml() { return shell('Approvals', `<h1>Approvals</h1>${[...this.approvals.values()].map((a) => `<article><strong>${a.status}</strong> ${a.tool} · ${a.agent} · ${a.server}<pre>${escapeHtml(JSON.stringify(a.arguments, null, 2))}</pre><button data-approval="${a.id}" data-action="approve">Approve</button><button data-approval="${a.id}" data-action="reject">Reject</button></article>`).join('') || '<p class="empty">No pending approvals.</p>'}`); }
   serversHtml() { return shell('MCP Servers', `<h1>MCP Servers</h1>${[...this.servers.values()].map((s) => `<article>${s.name}: <strong>${s.status}</strong></article>`).join('') || '<p class="empty">No MCP servers configured.</p>'}`); }
   loginHtmlLegacy() { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Create Admin Account</title><style>body{margin:0;background:#fcfaf7;color:#423d38;font:14px ui-sans-serif,system-ui}.login{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.visual{padding:64px;background:#fff;display:grid;place-content:center}.panel{background:#ff6b00;padding:64px;display:grid;place-content:center}.card{background:#fff;border-radius:8px;padding:32px;min-width:280px}input{display:block;width:100%;margin:8px 0;padding:10px;border:1px solid #e3e0dd;border-radius:6px}button{background:#fe6e00;color:#fff;border:0;padding:10px 16px;border-radius:6px}@media(max-width:700px){.login{grid-template-columns:1fr}.visual{display:none}}</style></head><body><main class="login"><section class="visual"><h1>MCP Firewall</h1><p>Policy control between agents and tools.</p></section><section class="panel"><form class="card"><h2>Create Admin Account</h2><label>Name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Password<input name="password" type="password"></label><label>Confirm Password<input name="confirmPassword" type="password"></label><button>Create Admin</button></form></section></main></body></html>`; }
   loginHtml() { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MCP Firewall Admin</title><style>body{margin:0;background:#fcfaf7;color:#423d38;font:14px ui-sans-serif,system-ui}.login{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.visual{padding:64px;background:#fff;display:grid;place-content:center}.panel{background:#ff6b00;padding:64px;display:grid;place-content:center}.card{background:#fff;border-radius:8px;padding:32px;min-width:280px}input{display:block;width:100%;margin:8px 0;padding:10px;border:1px solid #e3e0dd;border-radius:6px}button{background:#fe6e00;color:#fff;border:0;padding:10px 16px;border-radius:6px}@media(max-width:700px){.login{grid-template-columns:1fr}.visual{display:none}}</style></head><body><main class="login"><section class="visual"><h1>MCP Firewall</h1><p>Policy control between agents and tools.</p></section><section class="panel"><form class="card" id="admin-setup"><h2>Create Admin Account</h2><input name="name" placeholder="Name" required><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><input name="confirmPassword" type="password" placeholder="Confirm Password" required><button>Create Admin</button></form><form class="card" id="admin-login"><h2>Sign in</h2><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><button>Sign in</button></form></section></main><script>const submit=async(form,path)=>{form.addEventListener('submit',async(event)=>{event.preventDefault();const body=Object.fromEntries(new FormData(form));const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)return alert(data.error||'Request failed');if(data.session)localStorage.setItem('mcp-firewall-session',data.session.id);location.href='/api/dashboard';});};submit(document.querySelector('#admin-setup'),'/api/auth/setup');submit(document.querySelector('#admin-login'),'/api/auth/login');</script></body></html>`; }
-  toolCallsHtml() { return shell('Tool Calls', `<h1>Tool Calls</h1>${[...this.audit.values()].map((event) => `<article><strong>${event.tool}</strong> · ${event.agent} · ${event.server} · ${event.decision}</article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'}`); }
+  toolCallsHtml() { return shell('Tool Calls', `<h1>Tool Calls</h1>${[...this.audit.values()].map((event) => `<article><strong>${event.created_at}</strong> · ${event.agent} · ${event.tool} · ${event.server} · ${event.decision} · ${event.result ?? '-'} · ${event.duration}ms<details><summary>Details</summary><pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre></details></article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'}`); }
   policiesHtml() { return shell('Policies', `<h1>Policies</h1>${[...this.policies.values()].map((policy) => `<article><strong>${policy.name}</strong> · ${policy.action} · ${policy.enabled ? 'Enabled' : 'Disabled'} <button data-toggle-policy="${policy.name}">${policy.enabled ? 'Disable' : 'Enable'}</button><button data-delete-policy="${policy.name}">Delete</button></article>`).join('') || '<p class="empty">No policies configured.</p>'}<form id="policy-create"><input name="name" placeholder="Name" required><input name="tool" placeholder="Tool match" required><select name="action"><option value="allow">Allow</option><option value="deny">Deny</option><option value="require_approval">Require approval</option></select><button>Create policy</button></form>`); }
   settingsHtml() { return shell('Settings', `<h1>Settings</h1><p>Gateway configuration and session settings.</p>`); }
   renderView(view = 'dashboard') {
