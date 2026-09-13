@@ -14,14 +14,15 @@ export async function ensureDatabase(database: Database) {
 }
 
 export async function loadConfiguration(database: Database) {
-  const [policyRows, serverRows, userRows, sessionRows, approvalRows] = await Promise.all([
+  const [policyRows, serverRows, userRows, sessionRows, approvalRows, auditRows] = await Promise.all([
     database.pool.query('SELECT name, match, action, enabled FROM policies ORDER BY created_at'),
     database.pool.query('SELECT name, transport, command, url, status FROM mcp_servers ORDER BY name'),
     database.pool.query('SELECT id, name, email, password_hash, role, created_at, updated_at FROM admin_users ORDER BY created_at'),
     database.pool.query('SELECT id, user_id, created_at, expires_at FROM sessions'),
     database.pool.query('SELECT * FROM approvals ORDER BY requested_at'),
+    database.pool.query('SELECT * FROM audit_logs ORDER BY created_at'),
   ]);
-  return { policies: policyRows.rows, servers: serverRows.rows, users: userRows.rows, sessions: sessionRows.rows, approvals: approvalRows.rows };
+  return { policies: policyRows.rows, servers: serverRows.rows, users: userRows.rows, sessions: sessionRows.rows, approvals: approvalRows.rows, audit: auditRows.rows };
 }
 
 export async function syncConfiguration(database: Database, firewall: any) {
