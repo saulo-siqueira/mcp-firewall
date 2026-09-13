@@ -14,13 +14,17 @@ export async function init(directory = process.cwd()) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [command, flag] = process.argv.slice(2);
+  const [command, flag, extra] = process.argv.slice(2);
   try {
     if (command === 'init') { await init(); console.log('Created mcp-firewall.yaml'); }
     else if (command === 'start') {
-      const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml')) : new Firewall();
+      const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml'), { storagePath: join(process.cwd(), '.mcp-firewall-data.json') }) : new Firewall({ storagePath: join(process.cwd(), '.mcp-firewall-data.json') });
       const output = firewall.startOutput();
       console.log(flag === '--headless' ? output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled') : output);
+      if (extra !== '--check') {
+        const { createApiServer } = await import('./index.js');
+        createApiServer(firewall).listen(3210, '0.0.0.0', () => console.log('Gateway listening on port 3210'));
+      }
     }
     else { console.error('Usage: mcp-firewall init | start [--headless]'); process.exitCode = 1; }
   } catch (error) { console.error(error.message); process.exitCode = 1; }
