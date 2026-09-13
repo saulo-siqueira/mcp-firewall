@@ -2,7 +2,7 @@ FROM node:24-alpine
 WORKDIR /app
 COPY package.json ./
 COPY package-lock.json ./
-RUN npm ci --omit=optional
+RUN npm ci
 COPY src ./src
 COPY frontend ./frontend
 COPY tsconfig.json vite.config.ts drizzle.config.ts ./
