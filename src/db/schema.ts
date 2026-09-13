@@ -13,7 +13,7 @@ export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   agent: text('agent').notNull(), server: text('server').notNull(), tool: text('tool').notNull(),
   decision: text('decision').notNull(), policy: text('policy'), arguments: jsonb('arguments').notNull(),
-  duration: integer('duration').notNull(), result: jsonb('result'), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  duration: integer('duration').notNull(), result: jsonb('result'), approvedBy: text('approved_by'), approvedAt: timestamp('approved_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const mcpServers = pgTable('mcp_servers', {

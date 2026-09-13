@@ -6,7 +6,9 @@ export async function ensureDatabase(database: Database) {
   await database.pool.query(`
     CREATE TABLE IF NOT EXISTS policies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text UNIQUE NOT NULL, match jsonb NOT NULL, action text NOT NULL, enabled boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS mcp_servers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text UNIQUE NOT NULL, transport text NOT NULL, command text, url text, status text NOT NULL);
-    CREATE TABLE IF NOT EXISTS audit_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), agent text NOT NULL, server text NOT NULL, tool text NOT NULL, decision text NOT NULL, policy text, arguments jsonb NOT NULL, duration integer NOT NULL, result jsonb, created_at timestamptz NOT NULL DEFAULT now());
+    CREATE TABLE IF NOT EXISTS audit_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), agent text NOT NULL, server text NOT NULL, tool text NOT NULL, decision text NOT NULL, policy text, arguments jsonb NOT NULL, duration integer NOT NULL, result jsonb, approved_by text, approved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+    ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approved_by text;
+    ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approved_at timestamptz;
     CREATE TABLE IF NOT EXISTS admin_users (id text PRIMARY KEY, name text NOT NULL, email text UNIQUE NOT NULL, password_hash text NOT NULL, role text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY, user_id text NOT NULL, created_at timestamptz NOT NULL, expires_at bigint NOT NULL);
     CREATE TABLE IF NOT EXISTS approvals (id text PRIMARY KEY, status text NOT NULL, agent text NOT NULL, server text NOT NULL, tool text NOT NULL, arguments jsonb NOT NULL, policy text, call jsonb NOT NULL, audit_id text, requested_at timestamptz NOT NULL, approved_by text, approved_at timestamptz, rejected_by text, rejected_at timestamptz);
@@ -43,5 +45,5 @@ export async function syncConfiguration(database: Database, firewall: any) {
 }
 
 export async function appendAudit(database: Database, event: any) {
-  await database.pool.query('INSERT INTO audit_logs (id, agent, server, tool, decision, policy, arguments, duration, result) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO UPDATE SET decision = EXCLUDED.decision, duration = EXCLUDED.duration, result = EXCLUDED.result', [event.id, event.agent, event.server, event.tool, event.decision, event.policy, event.arguments, event.duration, event.result]);
+  await database.pool.query('INSERT INTO audit_logs (id, agent, server, tool, decision, policy, arguments, duration, result, approved_by, approved_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO UPDATE SET decision = EXCLUDED.decision, duration = EXCLUDED.duration, result = EXCLUDED.result, approved_by = EXCLUDED.approved_by, approved_at = EXCLUDED.approved_at', [event.id, event.agent, event.server, event.tool, event.decision, event.policy, event.arguments, event.duration, event.result, event.approved_by || null, event.approved_at || null]);
 }
