@@ -18,7 +18,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     if (command === 'init') { await init(); console.log('Created mcp-firewall.yaml'); }
     else if (command === 'start') {
-      const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml'), { storagePath: join(process.cwd(), '.mcp-firewall-data.json') }) : new Firewall({ storagePath: join(process.cwd(), '.mcp-firewall-data.json') });
+      const firewall = existsSync(join(process.cwd(), 'mcp-firewall.yaml')) ? loadConfigFile(join(process.cwd(), 'mcp-firewall.yaml'), { storagePath: join(process.cwd(), '.mcp-firewall-data.json'), approvalAvailable: flag !== '--headless' }) : new Firewall({ storagePath: join(process.cwd(), '.mcp-firewall-data.json'), approvalAvailable: flag !== '--headless' });
       const output = firewall.startOutput();
       if (flag === '--headless') console.error(output.replace('\nDashboard: http://localhost:3210', '\nHeadless mode: enabled'));
       else console.log(output);
