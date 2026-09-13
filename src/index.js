@@ -128,7 +128,7 @@ export class Firewall {
   async handleCall(input) {
     const evaluated = stage('policy.evaluate', () => this.evaluate(input)); const call = { ...evaluated.call, arguments: stage('secret.scan', () => redact(evaluated.call.arguments)) };
     const started = Date.now(); const base = input._audit_id && this.audit.get(input._audit_id) ? this.audit.get(input._audit_id) : { id: crypto.randomUUID(), agent: call.agent, server: call.server, tool: call.tool, arguments: call.arguments, decision: evaluated.decision, policy: evaluated.policy, duration: 0, result: null, created_at: now() };
-    const finish = (result, error = null) => { base.duration = Date.now() - started; base.result = result ?? error?.message ?? null; this.audit.set(base.id, base); this.persist(); return { ...result && typeof result === 'object' ? result : {}, decision: evaluated.decision, result, error, audit: base }; };
+    const finish = (result, error = null) => { base.duration = Date.now() - started; base.result = result == null ? (error?.message ?? null) : redact(result); this.audit.set(base.id, base); this.persist(); return { ...result && typeof result === 'object' ? result : {}, decision: evaluated.decision, result: result == null ? result : redact(result), error, audit: base }; };
     if (evaluated.decision === 'DENY') return finish(null, { code: 'POLICY_DENIED', message: 'MCP call denied by policy' });
     if (evaluated.decision === 'REQUIRE_APPROVAL' && !input._approved) {
       if (!this.approvalAvailable) { const unavailable = stage('approval.check', () => finish(null, { code: 'APPROVAL_UNAVAILABLE', message: 'approval mechanism unavailable' })); unavailable.decision = 'DENY'; return unavailable; }
@@ -144,11 +144,11 @@ export class Firewall {
     const approval = this.approvals.get(approvalId); if (!approval || approval.status !== 'PENDING') throw new Error('approval is not pending');
     approval.status = 'APPROVED'; approval.approved_by = approver; approval.approved_at = now(); this.persist();
     const result = await this.handleCall({ ...approval.call, _approved: true, _audit_id: approval.audit_id });
-    const audit = this.audit.get(approval.audit_id); if (audit) { audit.decision = 'APPROVED'; audit.approved_by = approver; audit.approved_at = approval.approved_at; this.persist(); }
+    const audit = this.audit.get(approval.audit_id); if (audit) { audit.approved_by = approver; audit.approved_at = approval.approved_at; audit.approval_status = 'APPROVED'; this.persist(); }
     return { ...result, approval };
   }
 
-  reject(approvalId, rejecter) { const approval = this.approvals.get(approvalId); if (!approval || approval.status !== 'PENDING') throw new Error('approval is not pending'); approval.status = 'REJECTED'; approval.rejected_by = rejecter; approval.rejected_at = now(); const audit = this.audit.get(approval.audit_id); if (audit) { audit.decision = 'DENY'; audit.rejected_by = rejecter; audit.rejected_at = approval.rejected_at; } this.persist(); return { decision: 'DENY', approval }; }
+  reject(approvalId, rejecter) { const approval = this.approvals.get(approvalId); if (!approval) { const error = new Error('approval not found'); error.code = 'NOT_FOUND'; throw error; } if (approval.status !== 'PENDING') throw new Error('approval is not pending'); approval.status = 'REJECTED'; approval.rejected_by = rejecter; approval.rejected_at = now(); const audit = this.audit.get(approval.audit_id); if (audit) { audit.decision = 'DENY'; audit.rejected_by = rejecter; audit.rejected_at = approval.rejected_at; } this.persist(); return { decision: 'DENY', approval }; }
 
   setupAdmin({ name, email, password, confirmPassword }) {
     if (this.users.size) { const error = new Error('admin already exists'); error.code = 'CONFLICT'; throw error; }

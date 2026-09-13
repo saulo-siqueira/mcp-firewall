@@ -7,11 +7,11 @@
 
 ## Gate
 
-The fresh independent verifier confirmed the full MVP after the final runtime fixes. The worktree was read-only during review.
+The post-gap independent verifier is rerun against the current implementation. The worktree is read-only during review.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Tests | PASS | `npm test`: 41/41 Node; Vitest 6/6, 1 skipped |
+| Tests | PASS | `npm test`: 42/42 Node; Vitest 8/8, 1 skipped |
 | Browser | PASS | `npm run test:e2e`: 5/5 |
 | Integration | PASS | Mock MCP and PostgreSQL: 2/2 |
 | Build | PASS | `npm run build`; `docker compose config --quiet`; `docker compose build` |
