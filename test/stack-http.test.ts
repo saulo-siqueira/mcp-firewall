@@ -29,3 +29,10 @@ test('Fastify exposes MCP initialize and rejects an unknown SDK session', async 
   const missing = await app.inject({ method: 'GET', url: '/mcp/sdk', headers: { 'mcp-session-id': 'missing' } });
   expect(missing.statusCode).toBe(400); expect(missing.json().error).toBe('MCP_SESSION_REQUIRED');
 });
+
+test('Fastify maps target transport failures to 502', async () => withCleanFirewall(async () => {
+  firewall.addPolicy({ name: 'allow-failing-target', match: { tool: 'test.fail' }, action: 'allow', enabled: true });
+  firewall.addServer({ name: 'missing-target', transport: 'http', url: 'http://127.0.0.1:1/unreachable' });
+  const response = await app.inject({ method: 'POST', url: '/mcp/tools/call', payload: { server: 'missing-target', tool: 'test.fail', arguments: {} } });
+  expect(response.statusCode).toBe(502); expect(response.json().error.code).toBe('TARGET_ERROR');
+}));

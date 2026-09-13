@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { PassThrough } from 'node:stream';
 import { Firewall, createApiServer, createMcpCall, handleMcpMessage, parseConfigYaml, startStdioGateway } from '../src/index.js';
 
@@ -13,6 +14,8 @@ test('gateway_identifies_tool_call_context', async () => {
   const firewall = new Firewall();
   const call = createMcpCall(context());
   assert.deepEqual(call, context());
+  const result = await new Firewall({ servers: [{ name: 'filesystem', handler: async (received) => received }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] }).handleCall(call);
+  assert.equal(result.result.tool, 'filesystem.read');
 });
 
 test('gateway_forwards_call_with_explicit_allow', async () => {
@@ -30,8 +33,10 @@ test('gateway_denies_call_without_target_invocation', async () => {
 });
 
 test('gateway_defaults_to_deny_without_matching_policy', async () => {
-  const firewall = new Firewall({ policies: [{ name: 'other', match: { tool: 'other' }, action: 'allow', enabled: true }] });
+  let invoked = false;
+  const firewall = new Firewall({ servers: [{ name: 'filesystem', handler: async () => { invoked = true; } }], policies: [{ name: 'other', match: { tool: 'other' }, action: 'allow', enabled: true }] });
   assert.equal((await firewall.handleCall(context())).decision, 'DENY');
+  assert.equal(invoked, false);
 });
 
 test('policy_precedence_restrictiveness_table', async () => {
@@ -41,16 +46,20 @@ test('policy_precedence_restrictiveness_table', async () => {
     { name: 'deny', match: { tool: 'filesystem.read' }, action: 'deny', enabled: true },
   ] });
   assert.equal((await firewall.evaluate(context())).decision, 'DENY');
+  assert.equal((await new Firewall({ policies: [{ match: { tool: 'filesystem.*' }, action: 'allow', enabled: true }, { match: { tool: 'filesystem.read' }, action: 'require_approval', enabled: true }] }).evaluate(context())).decision, 'REQUIRE_APPROVAL');
+  assert.equal((await new Firewall({ policies: [{ match: { tool: 'filesystem.*' }, action: 'allow', enabled: true }] }).evaluate(context())).decision, 'ALLOW');
 });
 
 test('gateway_uses_stdio_transport', async () => {
-  const firewall = new Firewall({ servers: [{ name: 'filesystem', transport: 'stdio', handler: async () => 'stdio' }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] });
-  assert.equal((await firewall.handleCall(context())).result, 'stdio');
+  const firewall = new Firewall({ servers: [{ name: 'filesystem', transport: 'stdio', command: process.execPath, args: ['-e', "process.stdin.on('data',()=>process.stdout.write(JSON.stringify({transport:'stdio'})))"] }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] });
+  assert.equal((await firewall.handleCall(context())).result.transport, 'stdio');
 });
 
 test('gateway_uses_streamable_http_transport', async () => {
-  const firewall = new Firewall({ servers: [{ name: 'filesystem', transport: 'http', handler: async () => 'http' }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] });
-  assert.equal((await firewall.handleCall(context())).result, 'http');
+  const target = http.createServer((request, response) => { request.resume(); request.on('end', () => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ transport: 'http' })); }); });
+  await new Promise((resolve) => target.listen(0, '127.0.0.1', resolve)); const address = target.address();
+  const firewall = new Firewall({ servers: [{ name: 'filesystem', transport: 'http', url: `http://127.0.0.1:${address.port}` }], policies: [{ match: { tool: 'filesystem.read' }, action: 'allow', enabled: true }] });
+  assert.equal((await firewall.handleCall(context())).result.transport, 'http'); await new Promise((resolve) => target.close(resolve));
 });
 test('config_yaml_loads_policy_and_server_contract', async () => { const config = parseConfigYaml('version: 1\npolicies:\n  - name: read\n    match:\n      tool: filesystem.*\n    action: allow\n    enabled: true\nmcp_servers:\n  - name: files\n    transport: stdio\n    command: node\n'); assert.equal(config.policies[0].match.tool, 'filesystem.*'); assert.equal(config.policies[0].action, 'allow'); assert.equal(config.mcp_servers[0].transport, 'stdio'); });
 test('stdio_target_is_invoked_and_missing_target_fails', async () => { const firewall = new Firewall({ servers: [{ name: 'stdio', transport: 'stdio', command: process.execPath, args: ['-e', "process.stdin.on('data',()=>process.stdout.write(JSON.stringify({ok:true,transport:'stdio'})))"] }], policies: [{ match: { tool: 'x' }, action: 'allow', enabled: true }] }); assert.equal((await firewall.handleCall({ agent: 'a', server: 'stdio', tool: 'x', arguments: {} })).result.transport, 'stdio'); const missing = await new Firewall({ policies: [{ match: { tool: 'x' }, action: 'allow', enabled: true }] }).handleCall({ agent: 'a', server: 'missing', tool: 'x', arguments: {} }); assert.equal(missing.error.code, 'TARGET_ERROR'); });
@@ -67,9 +76,7 @@ test('secret_scanner_redacts_initial_categories_before_forwarding', async () => 
 });
 
 test('audit_event_contains_required_fields_for_each_decision', async () => {
-  const firewall = new Firewall({ policies: [{ match: { tool: 'filesystem.read' }, action: 'deny', enabled: true }] });
-  const event = (await firewall.handleCall(context())).audit;
-  for (const key of ['id', 'agent', 'server', 'tool', 'arguments', 'decision', 'policy', 'duration', 'result', 'created_at']) assert.ok(key in event);
+  for (const action of ['allow', 'deny', 'require_approval']) { const firewall = new Firewall({ servers: [{ name: 'filesystem', handler: async () => ({ ok: true }) }], policies: [{ match: { tool: 'filesystem.read' }, action, enabled: true }] }); const event = (await firewall.handleCall(context())).audit; for (const key of ['id', 'agent', 'server', 'tool', 'arguments', 'decision', 'policy', 'duration', 'result', 'created_at']) assert.ok(key in event); }
 });
 
 test('audit_event_never_persists_raw_secret', async () => {
@@ -81,7 +88,7 @@ test('audit_event_never_persists_raw_secret', async () => {
 test('approval_request_starts_pending_with_redacted_context', async () => {
   const firewall = new Firewall({ policies: [{ name: 'approve', match: { tool: 'filesystem.read' }, action: 'require_approval', enabled: true }] });
   const result = await firewall.handleCall(context({ arguments: { password: 'secret' } }));
-  assert.equal(result.approval.status, 'PENDING'); assert.equal(result.approval.arguments.password, '[REDACTED]');
+  assert.equal(result.approval.status, 'PENDING'); assert.equal(result.approval.arguments.password, '[REDACTED]'); for (const key of ['agent', 'server', 'tool', 'requested_at', 'policy', 'call']) assert.ok(key in result.approval);
 });
 
 test('approval_approve_executes_once_and_records_approver', async () => {
@@ -104,14 +111,14 @@ test('approval_unavailable_blocks_and_audits', async () => {
 test('auth_setup_creates_first_admin', async () => { const firewall = new Firewall(); const user = firewall.setupAdmin({ name: 'Admin', email: 'a@example.com', password: 'pw', confirmPassword: 'pw' }); assert.equal(user.role, 'ADMIN'); assert.notEqual(user.password_hash, 'pw'); });
 test('auth_login_creates_session_and_opens_dashboard', async () => { const firewall = new Firewall(); firewall.setupAdmin({ name: 'Admin', email: 'a@example.com', password: 'pw', confirmPassword: 'pw' }); const login = firewall.login('a@example.com', 'pw'); assert.ok(login.session); assert.equal(firewall.authorize(login.session.id), true); });
 test('auth_invalid_credentials_create_no_session', async () => { const firewall = new Firewall(); firewall.setupAdmin({ name: 'Admin', email: 'a@example.com', password: 'pw', confirmPassword: 'pw' }); assert.throws(() => firewall.login('a@example.com', 'bad')); assert.equal(firewall.sessions.size, 0); });
-test('auth_expired_or_logged_out_session_is_rejected', async () => { const firewall = new Firewall(); firewall.setupAdmin({ name: 'Admin', email: 'a@example.com', password: 'pw', confirmPassword: 'pw' }); const session = firewall.login('a@example.com', 'pw').session; firewall.logout(session.id); assert.equal(firewall.authorize(session.id), false); });
+test('auth_expired_or_logged_out_session_is_rejected', async () => { const firewall = new Firewall(); firewall.setupAdmin({ name: 'Admin', email: 'a@example.com', password: 'pw', confirmPassword: 'pw' }); const session = firewall.login('a@example.com', 'pw').session; firewall.logout(session.id); assert.equal(firewall.authorize(session.id), false); const expired = firewall.login('a@example.com', 'pw').session; expired.expires_at = Date.now() - 1; assert.equal(firewall.authorize(expired.id), false); });
 test('policies_admin_crud_toggle_and_yaml_representation', async () => { const firewall = new Firewall(); firewall.addPolicy({ name: 'read: prod', match: { tool: 'x:*' }, action: 'allow', enabled: true }); firewall.updatePolicy('read: prod', { enabled: false }); assert.equal(firewall.getPolicy('read: prod').enabled, false); assert.match(firewall.policyYaml('read: prod'), /name: "read: prod"/); assert.match(firewall.policyYaml('read: prod'), /tool: "x:\*"/); firewall.deletePolicy('read: prod'); assert.equal(firewall.getPolicy('read: prod'), undefined); });
-test('mcp_servers_accept_only_mvp_transports', async () => { const firewall = new Firewall(); firewall.addServer({ name: 'db', transport: 'http', url: 'x' }); assert.equal(firewall.servers.get('db').transport, 'http'); assert.throws(() => firewall.addServer({ name: 'x', transport: 'websocket' })); });
+test('mcp_servers_accept_only_mvp_transports', async () => { const firewall = new Firewall(); firewall.addServer({ name: 'db', transport: 'http', url: 'x', status: 'Disconnected' }); firewall.addServer({ name: 'stdio', transport: 'stdio', command: 'node', status: 'Connected' }); assert.equal(firewall.servers.get('db').transport, 'http'); assert.equal(firewall.servers.get('stdio').command, 'node'); assert.throws(() => firewall.addServer({ name: 'x', transport: 'websocket' })); assert.throws(() => firewall.addServer({ name: 'bad', transport: 'http', status: 'Unknown' })); });
 test('mcp_servers_admin_crud_and_dashboard_delete_control', async () => { const firewall = new Firewall(); firewall.addServer({ name: 'db', transport: 'http', url: 'http://db' }); assert.equal(firewall.updateServer('db', { status: 'Connected' }).status, 'Connected'); assert.match(firewall.serversHtml(), /data-delete-server/); assert.equal(firewall.deleteServer('db'), true); });
 test('dashboard_renders_required_metrics_and_sections', async () => { const firewall = new Firewall(); const html = firewall.dashboardHtml(); for (const label of ['Total Tool Calls', 'Allowed', 'Blocked', 'Requires Approval', 'Recent Calls', 'Active Policies', 'Secrets Intercepted', 'Dashboard', 'Tool Calls', 'Policies', 'MCP Servers', 'Approvals', 'Audit Logs', 'Settings']) assert.match(html, new RegExp(label)); assert.match(html, /shell-sidebar/); assert.match(html, /shell-header/); });
 test('audit_detail_renders_redacted_call_and_approval_data', async () => { const firewall = new Firewall({ policies: [{ match: { tool: 'filesystem.read' }, action: 'deny', enabled: true }] }); const result = await firewall.handleCall(context({ arguments: { password: 'secret' } })); const html = firewall.auditDetailHtml(result.audit.id); assert.match(html, /\[REDACTED\]/); assert.match(html, /DENY/); });
 test('approvals_screen_lists_pending_requests_and_actions', async () => { const firewall = new Firewall({ policies: [{ match: { tool: 'filesystem.read' }, action: 'require_approval', enabled: true }] }); await firewall.handleCall(context()); const html = firewall.approvalsHtml(); assert.match(html, /PENDING/); assert.match(html, /Approve/); assert.match(html, /Reject/); });
-test('mcp_servers_screen_renders_allowed_statuses', async () => { const firewall = new Firewall(); firewall.addServer({ name: 'db', transport: 'http', url: 'x' }); const html = firewall.serversHtml(); assert.match(html, /Disconnected/); });
+test('mcp_servers_screen_renders_allowed_statuses', async () => { const firewall = new Firewall(); firewall.addServer({ name: 'db', transport: 'http', url: 'x' }); firewall.addServer({ name: 'ok', transport: 'http', url: 'x', status: 'Connected' }); firewall.addServer({ name: 'bad', transport: 'http', url: 'x', status: 'Error' }); const html = firewall.serversHtml(); assert.match(html, /Disconnected/); assert.match(html, /Connected/); assert.match(html, /Error/); });
 test('admin_screens_render_command_center_sections', async () => { const firewall = new Firewall(); assert.match(firewall.loginHtml(), /Create Admin Account/); assert.match(firewall.toolCallsHtml(), /Tool Calls/); assert.match(firewall.policiesHtml(), /Policies/); assert.match(firewall.settingsHtml(), /Settings/); });
 test('admin_screens_expose_loading_and_error_states', async () => { const firewall = new Firewall(); for (const html of [firewall.dashboardHtml(), firewall.toolCallsHtml(), firewall.policiesHtml(), firewall.serversHtml(), firewall.approvalsHtml()]) { assert.match(html, /Loading/); assert.match(html, /Error/); } });
 test('admin_navigation_renders_each_route_view', async () => { const firewall = new Firewall(); for (const view of ['dashboard', 'tool-calls', 'policies', 'mcp-servers', 'approvals', 'audit-logs', 'settings']) assert.match(firewall.renderView(view), new RegExp(view.replace('-', ' '), 'i')); });

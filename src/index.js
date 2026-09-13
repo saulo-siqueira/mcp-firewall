@@ -106,11 +106,12 @@ export class Firewall {
   addServer(input) {
     const transport = input?.transport || 'stdio';
     if (!input?.name || !TRANSPORTS.includes(transport)) throw new Error('transport must be stdio or http');
+    if (input.status !== undefined && !['Connected', 'Disconnected', 'Error'].includes(input.status)) throw new Error('invalid server status');
     if (this.servers.has(input.name)) { const error = new Error('server already exists'); error.code = 'CONFLICT'; throw error; }
     const server = { status: input.status || 'Disconnected', transport, ...input };
     this.servers.set(server.name, server); this.persist(); return server;
   }
-  updateServer(name, changes) { const current = this.servers.get(name); if (!current) throw new Error('server not found'); const transport = changes.transport || current.transport; if (!TRANSPORTS.includes(transport)) throw new Error('transport must be stdio or http'); const next = { ...current, ...changes, name, transport }; this.servers.set(name, next); this.persist(); return next; }
+  updateServer(name, changes) { const current = this.servers.get(name); if (!current) throw new Error('server not found'); const transport = changes.transport || current.transport; if (!TRANSPORTS.includes(transport)) throw new Error('transport must be stdio or http'); if (changes.status !== undefined && !['Connected', 'Disconnected', 'Error'].includes(changes.status)) throw new Error('invalid server status'); const next = { ...current, ...changes, name, transport }; this.servers.set(name, next); this.persist(); return next; }
   deleteServer(name) { const deleted = this.servers.delete(name); if (deleted) this.persist(); return deleted; }
 
   evaluate(input) {
