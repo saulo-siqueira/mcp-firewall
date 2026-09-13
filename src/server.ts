@@ -10,6 +10,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { trace } from '@opentelemetry/api';
+import { NodeSDK } from '@opentelemetry/sdk-node';
 import { appendAudit, ensureDatabase, loadConfiguration, syncConfiguration } from './db/repository.js';
 
 const root = process.cwd();
@@ -28,6 +29,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 const transports = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
 const createSdkServer = () => { const server = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capabilities: { tools: {} } }); server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] })); server.setRequestHandler(CallToolRequestSchema, async (request: any) => { const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER, tool: request.params.name, arguments: request.params.arguments || {} }); if (result.error) throw new Error(result.error.message); return { content: [{ type: 'text', text: JSON.stringify(result.result ?? null) }] }; }); return server; };
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
+const telemetry = new NodeSDK({ serviceName: 'mcp-firewall' });
+if (process.env.OTEL_SDK_DISABLED !== 'true') await telemetry.start();
 const tracer = trace.getTracer('mcp-firewall');
 const callSchema = z.object({ agent: z.string().optional(), server: z.string().optional(), tool: z.string().optional(), arguments: z.record(z.string(), z.unknown()).optional(), method: z.string().optional(), params: z.record(z.string(), z.unknown()).optional() });
 if (existsSync(join(root, 'dist'))) await app.register(fastifyStatic, { root: join(root, 'dist'), wildcard: true });
@@ -52,5 +55,7 @@ const port = Number(process.env.PORT || 3210);
 if (process.env.NODE_ENV !== 'test') {
   if (database) { try { await ensureDatabase(database); const stored = await loadConfiguration(database); if (stored.policies.length && !firewall.policies.size) stored.policies.forEach((policy: any) => firewall.addPolicy(policy)); if (stored.servers.length && !firewall.servers.size) stored.servers.forEach((server: any) => firewall.addServer(server)); if (stored.users.length || stored.sessions.length || stored.approvals.length || stored.audit.length) firewall.restore(stored as any); } catch (error) { app.log.error({ error }, 'postgres initialization failed'); } }
   app.listen({ port, host: '0.0.0.0' }).catch((error) => { app.log.error(error); process.exit(1); });
+  const shutdown = async () => { await app.close(); await telemetry.shutdown(); process.exit(0); };
+  process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 }
 export { app, firewall };
