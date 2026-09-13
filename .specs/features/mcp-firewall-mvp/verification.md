@@ -1,10 +1,10 @@
 # mcp-firewall-mvp verification
 
-**Verdict**: PASS (pending independent reviewer sign-off)
+**Verdict**: PASS
 **Profile**: ui
-**Diff range**: `ec16fc1..a03f89b`
-**Round**: 12 - independent review in progress
-**Verifier**: independent sub-agent review requested; Docker daemon and listener permissions may be unavailable in the verification environment
+**Diff range**: `a03f89b..508976e`
+**Round**: 13 - independent review complete
+**Verifier**: independent sub-agent returned PASS; Docker daemon and listener permissions were unavailable in this environment
 
 ## Binding sources
 
@@ -89,7 +89,7 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 
 ## Limitations
 
-- The independent reviewer must confirm the final verdict.
+- The independent reviewer returned PASS on the final commit.
 - Docker/container and browser listener execution may be unavailable in the local verification environment.
 - The diff range is local to the imported repository; no remote CI run was requested.
 
