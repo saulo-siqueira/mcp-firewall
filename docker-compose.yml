@@ -14,7 +14,7 @@ services:
     ports:
       - "3210:3210"
     volumes:
-      - ./mcp-firewall.yaml:/app/mcp-firewall.yaml:ro
+      - ./mcp-firewall.yaml:/app/mcp-firewall.yaml:rw
       - firewall-data:/app/data
     environment:
       STORAGE_PATH: /app/data/state.json

@@ -7,6 +7,7 @@ const DECISIONS = ['ALLOW', 'DENY', 'REQUIRE_APPROVAL'];
 const TRANSPORTS = ['stdio', 'http'];
 const APPROVAL_STATES = ['PENDING', 'APPROVED', 'REJECTED'];
 const REDACTED = '[REDACTED]';
+const yamlScalar = (value) => typeof value === 'boolean' ? String(value) : JSON.stringify(String(value ?? ''));
 
 export const createMcpCall = ({ agent, server, tool, arguments: args = {} }) => ({
   agent, server, tool, arguments: structuredClone(args),
@@ -62,7 +63,16 @@ export const parseConfigYaml = (source) => {
 };
 const parseYamlScalar = (value) => { const v = String(value).trim(); if (v === 'true') return true; if (v === 'false') return false; if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1); return v; };
 export const loadConfigFile = (file, options = {}) => { const config = parseConfigYaml(readFileSync(file, 'utf8')); return new Firewall({ ...options, configPath: file, policies: config.policies, servers: config.mcp_servers, configAuthoritative: true }); };
-export const startStdioGateway = (firewall, input = process.stdin, output = process.stdout, gatewayContext = {}) => { let buffer = ''; input.setEncoding('utf8'); input.on('data', async (chunk) => { buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop(); for (const line of lines.filter(Boolean)) { try { const message = JSON.parse(line); const params = message.params || {}; const result = await firewall.handleCall({ agent: params.agent || message.agent || gatewayContext.agent, server: params.server || gatewayContext.server, tool: params.name || params.tool, arguments: params.arguments || {} }); output.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: result.error ? undefined : result, error: result.error || undefined })}\n`); } catch (error) { output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } })}\n`); } } }); return firewall; };
+export const handleMcpMessage = async (firewall, message, gatewayContext = {}) => {
+  const params = message.params || {};
+  if (message.method === 'initialize') return { protocolVersion: params.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'mcp-firewall', version: '0.1.0' } };
+  if (message.method === 'notifications/initialized') return null;
+  if (message.method === 'tools/list') return { tools: [] };
+  if (message.method !== 'tools/call') return { error: { code: -32601, message: 'method not found' } };
+  const result = await firewall.handleCall({ agent: params.agent || message.agent || gatewayContext.agent, server: params.server || gatewayContext.server, tool: params.name || params.tool, arguments: params.arguments || {} });
+  return result.error ? { error: { code: -32000, message: result.error.message, data: result } } : result;
+};
+export const startStdioGateway = (firewall, input = process.stdin, output = process.stdout, gatewayContext = {}) => { let buffer = ''; input.setEncoding('utf8'); input.on('data', async (chunk) => { buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop(); for (const line of lines.filter(Boolean)) { try { const message = JSON.parse(line); const payload = await handleMcpMessage(firewall, message, gatewayContext); if (message.id !== undefined && payload !== null) output.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: payload, error: payload.error })}\n`); } catch (error) { output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } })}\n`); } } }); return firewall; };
 
 export class Firewall {
   constructor({ policies = [], servers = [], approvalAvailable = true, storagePath = null, configPath = null, configAuthoritative = false } = {}) {
@@ -77,7 +87,7 @@ export class Firewall {
   }
 
   persist() { if (this.storagePath) writeFileSync(this.storagePath, JSON.stringify({ policies: [...this.policies.values()], servers: [...this.servers.values()].map(({ handler, ...server }) => server), users: [...this.users.values()], sessions: [...this.sessions.values()], approvals: [...this.approvals.values()], audit: [...this.audit.values()] }, null, 2)); if (this.configPath) { try { writeFileSync(this.configPath, this.configYaml()); } catch { /* read-only config mounts keep API state in storage */ } } }
-  configYaml() { const policies = [...this.policies.values()].map((p) => `  - name: ${p.name}\n    match:\n${Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${JSON.stringify(String(value))}`).join('\n')}\n    action: ${p.action.toLowerCase()}\n    enabled: ${p.enabled}`).join('\n'); const servers = [...this.servers.values()].map((s) => `  - name: ${s.name}\n    transport: ${s.transport}\n    ${s.transport === 'http' ? `url: ${s.url || ''}` : `command: ${s.command || ''}`}`).join('\n'); return `version: 1\npolicies:\n${policies || ''}\nmcp_servers:\n${servers || ''}\n`; }
+  configYaml() { const policies = [...this.policies.values()].map((p) => `  - name: ${yamlScalar(p.name)}\n    match:\n${Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${yamlScalar(value)}`).join('\n')}\n    action: ${yamlScalar(p.action.toLowerCase())}\n    enabled: ${p.enabled}`).join('\n'); const servers = [...this.servers.values()].map((s) => `  - name: ${yamlScalar(s.name)}\n    transport: ${yamlScalar(s.transport)}\n    ${s.transport === 'http' ? `url: ${yamlScalar(s.url)}` : `command: ${yamlScalar(s.command)}`}`).join('\n'); return `version: 1\npolicies:\n${policies || ''}\nmcp_servers:\n${servers || ''}\n`; }
   restore(state) { for (const policy of state.policies || []) this.policies.set(policy.name, policy); for (const server of state.servers || []) this.servers.set(server.name, server); for (const user of state.users || []) this.users.set(user.email, user); for (const session of state.sessions || []) this.sessions.set(session.id, session); for (const approval of state.approvals || []) this.approvals.set(approval.id, approval); for (const event of state.audit || []) this.audit.set(event.id, event); }
 
   addPolicy(input) {
@@ -91,7 +101,7 @@ export class Firewall {
   updatePolicy(name, changes) { const current = this.policies.get(name); if (!current) throw new Error('policy not found'); if (changes.action !== undefined && !DECISIONS.includes(String(changes.action).toUpperCase())) throw new Error('invalid policy action'); const next = { ...current, ...changes, action: changes.action ? String(changes.action).toUpperCase() : current.action }; this.policies.set(name, next); this.persist(); return next; }
   getPolicy(name) { return this.policies.get(name); }
   deletePolicy(name) { const deleted = this.policies.delete(name); if (deleted) this.persist(); return deleted; }
-  policyYaml(name) { const p = this.getPolicy(name); if (!p) throw new Error('policy not found'); const match = Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${value}`).join('\n') || '      tool: "*"'; return `version: 1\npolicies:\n  - name: ${p.name}\n    match:\n${match}\n    action: ${p.action.toLowerCase()}\n    enabled: ${p.enabled}\n`; }
+  policyYaml(name) { const p = this.getPolicy(name); if (!p) throw new Error('policy not found'); const match = Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${yamlScalar(value)}`).join('\n') || '      tool: "*"'; return `version: 1\npolicies:\n  - name: ${yamlScalar(p.name)}\n    match:\n${match}\n    action: ${yamlScalar(p.action.toLowerCase())}\n    enabled: ${p.enabled}\n`; }
 
   addServer(input) {
     const transport = input?.transport || 'stdio';
@@ -146,7 +156,7 @@ export class Firewall {
     const session = { id: id('session'), userId: user.id, created_at: now(), expires_at: Date.now() + 8 * 60 * 60 * 1000 }; this.sessions.set(session.id, session); this.persist(); return { user: { ...user, password_hash: undefined }, session };
   }
 
-  authorize(sessionId) { const session = this.sessions.get(sessionId); if (!session || session.expires_at <= Date.now()) { this.sessions.delete(sessionId); return false; } return true; }
+  authorize(sessionId) { const session = this.sessions.get(sessionId); if (!session || session.expires_at <= Date.now()) { if (session) { this.sessions.delete(sessionId); this.persist(); } return false; } return true; }
   logout(sessionId) { this.sessions.delete(sessionId); this.persist(); }
 
   api(method, path, body = {}, sessionId) {
@@ -237,11 +247,12 @@ export function createApiServer(firewall, { port = 3210 } = {}) {
     let body = {};
     try { if (request.method !== 'GET' && request.method !== 'HEAD') body = await readJsonBody(request); }
     catch { response.writeHead(400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'INVALID_JSON' })); return; }
-    if (request.method === 'POST' && url.pathname === '/mcp/tools/call') {
+    if (request.method === 'POST' && (url.pathname === '/mcp' || url.pathname === '/mcp/' || url.pathname === '/mcp/tools/call')) {
       try {
-        const result = await firewall.handleCall(body);
+        const result = url.pathname === '/mcp/tools/call' ? await firewall.handleCall(body) : await handleMcpMessage(firewall, body, { agent: request.headers['mcp-agent'], server: request.headers['mcp-server'] });
+        if (body.method && result?.error && body.method !== 'tools/call') { response.writeHead(result.error.code === -32601 ? 404 : 400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: result.error })); return; }
         const status = result.decision === 'ALLOW' ? 200 : result.decision === 'REQUIRE_APPROVAL' ? 202 : result.error?.code === 'APPROVAL_UNAVAILABLE' ? 409 : 403;
-        response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(result)); return;
+        response.writeHead(status, { 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }); response.end(JSON.stringify(body.method ? { jsonrpc: '2.0', id: body.id, result: result.error ? undefined : result, error: result.error || undefined } : result)); return;
       } catch (error) { response.writeHead(502, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'TARGET_ERROR', message: error.message })); return; }
     }
     const result = await firewall.api(request.method, url.pathname, body, sessionId);
