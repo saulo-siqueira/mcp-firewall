@@ -11,7 +11,7 @@ node src/cli.js init
 docker compose up --build
 ```
 
-Open [http://localhost:3210/](http://localhost:3210/) for the React/Vite Command Center, or `/api/dashboard` for the server-rendered fallback. The MCP gateway supports `POST /mcp`, the SDK-backed Streamable HTTP endpoint `POST|GET|DELETE /mcp/sdk`, and the compatibility boundary `POST /mcp/tools/call`; administration is under `/api`.
+Open [http://localhost:3210/](http://localhost:3210/) for the React/Vite Command Center, or `/api/dashboard` for the server-rendered fallback. The Fastify MCP gateway supports `POST /mcp`, the SDK-backed Streamable HTTP endpoint `POST|GET|DELETE /mcp/sdk`, and the compatibility boundary `POST /mcp/tools/call`; administration is under `/api`.
 
 ## Policy example
 
