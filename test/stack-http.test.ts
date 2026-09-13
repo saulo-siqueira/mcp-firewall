@@ -55,3 +55,10 @@ test('approval API distinguishes missing from non-pending approvals', async () =
   const nonPending = firewall.api('POST', `/api/approvals/${pending.approval.id}/reject`, {}, session);
   expect(nonPending.status).toBe(409);
 }));
+
+test('dashboard API returns metrics JSON and setup authenticates the new admin', async () => withCleanFirewall(async () => {
+  const setup = firewall.api('POST', '/api/auth/setup', { name: 'Admin', email: 'new@example.com', password: 'pw', confirmPassword: 'pw' });
+  expect(setup.status).toBe(201); expect(setup.body.session.id).toBeTruthy();
+  const dashboard = firewall.api('GET', '/api/dashboard', {}, setup.body.session.id);
+  expect(dashboard.status).toBe(200); expect(dashboard.body.total_tool_calls).toBe(0); expect(dashboard.body.recent_calls).toEqual([]);
+}));

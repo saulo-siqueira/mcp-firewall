@@ -167,9 +167,11 @@ export class Firewall {
   sessionUser(sessionId) { const session = this.sessions.get(sessionId); return [...this.users.values()].find((user) => user.id === session?.userId); }
   logout(sessionId) { this.sessions.delete(sessionId); this.persist(); }
 
+  dashboardSummary() { const events = [...this.audit.values()]; return { total_tool_calls: events.length, allowed: events.filter((x) => x.decision === 'ALLOW').length, blocked: events.filter((x) => x.decision === 'DENY').length, requires_approval: events.filter((x) => x.decision === 'REQUIRE_APPROVAL').length, secrets_intercepted: events.filter((x) => JSON.stringify(x.arguments).includes(REDACTED)).length, recent_calls: events.slice(-5).reverse(), calls_over_time: events.slice(-10), most_used_tools: Object.entries(events.reduce((all, event) => ({ ...all, [event.tool]: (all[event.tool] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).slice(0, 5), active_policies: [...this.policies.values()].filter((policy) => policy.enabled) }; }
+
   api(method, path, body = {}, sessionId) {
     if (method === 'POST' && path === '/api/auth/setup') {
-      try { return { status: 201, body: { user: this.setupAdmin(body) } }; }
+      try { const user = this.setupAdmin(body); const login = this.login(body.email, body.password); return { status: 201, body: { user, session: login.session } }; }
       catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
     }
     if (method === 'POST' && path === '/api/auth/login') {
@@ -182,7 +184,7 @@ export class Firewall {
     }
     const privateRoute = path.startsWith('/api/');
     if (privateRoute && !this.authorize(sessionId)) return { status: 401, body: { error: 'UNAUTHORIZED' } };
-    const collections = { '/api/policies': [...this.policies.values()], '/api/mcp-servers': [...this.servers.values()], '/api/tool-calls': [...this.audit.values()], '/api/audit-logs': [...this.audit.values()], '/api/approvals': [...this.approvals.values()] };
+    const collections = { '/api/dashboard': this.dashboardSummary(), '/api/policies': [...this.policies.values()], '/api/mcp-servers': [...this.servers.values()], '/api/tool-calls': [...this.audit.values()], '/api/audit-logs': [...this.audit.values()], '/api/approvals': [...this.approvals.values()] };
     if (method === 'GET' && collections[path]) return { status: 200, body: collections[path] };
     if (method === 'POST' && path === '/api/policies') {
       try { return { status: 201, body: this.addPolicy(body) }; }

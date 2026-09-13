@@ -6,7 +6,8 @@ export async function ensureDatabase(database: Database) {
   await database.pool.query(`
     CREATE TABLE IF NOT EXISTS policies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text UNIQUE NOT NULL, match jsonb NOT NULL, action text NOT NULL, enabled boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS mcp_servers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text UNIQUE NOT NULL, transport text NOT NULL, command text, url text, status text NOT NULL);
-    CREATE TABLE IF NOT EXISTS audit_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), agent text NOT NULL, server text NOT NULL, tool text NOT NULL, decision text NOT NULL, policy text, arguments jsonb NOT NULL, duration integer NOT NULL, result jsonb, approved_by text, approved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+    CREATE TABLE IF NOT EXISTS audit_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), agent text NOT NULL, server text NOT NULL, tool text NOT NULL, decision text NOT NULL CHECK (decision IN ('ALLOW','DENY','REQUIRE_APPROVAL')), policy text, arguments jsonb NOT NULL, duration integer NOT NULL, result jsonb, approved_by text, approved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+    DO $$ BEGIN ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_decision_check CHECK (decision IN ('ALLOW','DENY','REQUIRE_APPROVAL')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approved_by text;
     ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approved_at timestamptz;
     CREATE TABLE IF NOT EXISTS admin_users (id text PRIMARY KEY, name text NOT NULL, email text UNIQUE NOT NULL, password_hash text NOT NULL, role text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
@@ -45,5 +46,6 @@ export async function syncConfiguration(database: Database, firewall: any) {
 }
 
 export async function appendAudit(database: Database, event: any) {
+  if (!['ALLOW', 'DENY', 'REQUIRE_APPROVAL'].includes(event.decision)) throw new Error('invalid audit decision');
   await database.pool.query('INSERT INTO audit_logs (id, agent, server, tool, decision, policy, arguments, duration, result, approved_by, approved_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO UPDATE SET decision = EXCLUDED.decision, duration = EXCLUDED.duration, result = EXCLUDED.result, approved_by = EXCLUDED.approved_by, approved_at = EXCLUDED.approved_at', [event.id, event.agent, event.server, event.tool, event.decision, event.policy, event.arguments, event.duration, event.result, event.approved_by || null, event.approved_at || null]);
 }

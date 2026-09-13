@@ -10,7 +10,7 @@ Binding evidence: `src/index.js:42`, `src/index.js:126`, `src/server.ts:41`, `fr
 
 ## Evidence
 
-- `npm test`: 42 Node tests passed; Vitest 8 passed, 1 skipped by default.
+- `npm test`: 42 Node tests passed; Vitest 9 passed, 1 skipped by default.
 - `npm run build`: passed.
 - `npm run test:e2e`: 5/5 Chromium passed, including all seven React views, CRUD, approval, audit and logout.
 - `npm run test:integration`: 2/2 passed, including independent Mock MCP and real PostgreSQL configuration/audit persistence.

@@ -12,7 +12,7 @@ describe.skipIf(!process.env.RUN_CONTAINERS)('PostgreSQL integration', () => {
       await ensureDatabase(database);
       const firewall = { policies: new Map([['p', { name: 'p', match: { tool: 'safe.read' }, action: 'allow', enabled: true }]]), servers: new Map([['s', { name: 's', transport: 'http', url: 'http://mock', status: 'Disconnected' }]]), users: new Map(), sessions: new Map(), approvals: new Map() };
       await syncConfiguration(database, firewall);
-      await appendAudit(database, { id: '11111111-1111-4111-8111-111111111111', agent: 'test', server: 's', tool: 'safe.read', decision: 'APPROVED', policy: 'p', arguments: { password: '[REDACTED]' }, duration: 3, result: { ok: true }, approved_by: 'Admin', approved_at: new Date().toISOString() });
+      await appendAudit(database, { id: '11111111-1111-4111-8111-111111111111', agent: 'test', server: 's', tool: 'safe.read', decision: 'REQUIRE_APPROVAL', policy: 'p', arguments: { password: '[REDACTED]' }, duration: 3, result: { ok: true }, approved_by: 'Admin', approved_at: new Date().toISOString() });
       const loaded = await loadConfiguration(database);
       expect(loaded.policies).toHaveLength(1);
       expect(loaded.policies[0].name).toBe('p');

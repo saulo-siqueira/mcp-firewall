@@ -11,7 +11,7 @@ The post-gap independent verifier is rerun against the current implementation. T
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Tests | PASS | `npm test`: 42/42 Node; Vitest 8/8, 1 skipped |
+| Tests | PASS | `npm test`: 42/42 Node; Vitest 9/9, 1 skipped |
 | Browser | PASS | `npm run test:e2e`: 5/5 |
 | Integration | PASS | Mock MCP and PostgreSQL: 2/2 |
 | Build | PASS | `npm run build`; `docker compose config --quiet`; `docker compose build` |
