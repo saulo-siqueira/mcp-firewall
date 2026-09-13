@@ -92,7 +92,7 @@ export class Firewall {
 
   persist() { if (this.storagePath) writeFileSync(this.storagePath, JSON.stringify({ policies: [...this.policies.values()], servers: [...this.servers.values()].map(({ handler, ...server }) => server), users: [...this.users.values()], sessions: [...this.sessions.values()], approvals: [...this.approvals.values()], audit: [...this.audit.values()] }, null, 2)); if (this.configPath) { try { writeFileSync(this.configPath, this.configYaml()); } catch { /* read-only config mounts keep API state in storage */ } } }
   configYaml() { const policies = [...this.policies.values()].map((p) => `  - name: ${yamlScalar(p.name)}\n    match:\n${Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${yamlScalar(value)}`).join('\n')}\n    action: ${yamlScalar(p.action.toLowerCase())}\n    enabled: ${p.enabled}`).join('\n'); const servers = [...this.servers.values()].map((s) => `  - name: ${yamlScalar(s.name)}\n    transport: ${yamlScalar(s.transport)}\n    ${s.transport === 'http' ? `url: ${yamlScalar(s.url)}` : `command: ${yamlScalar(s.command)}`}`).join('\n'); return `version: 1\npolicies:\n${policies || ''}\nmcp_servers:\n${servers || ''}\n`; }
-  restore(state) { for (const policy of state.policies || []) this.policies.set(policy.name, policy); for (const server of state.servers || []) this.servers.set(server.name, server); for (const user of state.users || []) this.users.set(user.email, user); for (const session of state.sessions || []) this.sessions.set(session.id, session); for (const approval of state.approvals || []) this.approvals.set(approval.id, approval); for (const event of state.audit || []) this.audit.set(event.id, event); }
+  restore(state) { for (const policy of state.policies || []) this.policies.set(policy.name, policy); for (const server of state.servers || []) this.servers.set(server.name, server); for (const user of state.users || []) this.users.set(user.email, user); for (const session of state.sessions || []) this.sessions.set(session.id, { ...session, userId: session.userId || session.user_id }); for (const approval of state.approvals || []) this.approvals.set(approval.id, approval); for (const event of state.audit || []) { if (!DECISIONS.includes(event.decision)) throw new Error('invalid audit decision'); this.audit.set(event.id, event); } }
 
   addPolicy(input) {
     const name = input?.name || id('policy');
@@ -170,6 +170,7 @@ export class Firewall {
   dashboardSummary() { const events = [...this.audit.values()]; return { total_tool_calls: events.length, allowed: events.filter((x) => x.decision === 'ALLOW').length, blocked: events.filter((x) => x.decision === 'DENY').length, requires_approval: events.filter((x) => x.decision === 'REQUIRE_APPROVAL').length, secrets_intercepted: events.filter((x) => JSON.stringify(x.arguments).includes(REDACTED)).length, recent_calls: events.slice(-5).reverse(), calls_over_time: events.slice(-10), most_used_tools: Object.entries(events.reduce((all, event) => ({ ...all, [event.tool]: (all[event.tool] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).slice(0, 5), active_policies: [...this.policies.values()].filter((policy) => policy.enabled) }; }
 
   api(method, path, body = {}, sessionId) {
+    const requestUrl = new URL(path, 'http://localhost'); const query = requestUrl.searchParams; path = requestUrl.pathname;
     if (method === 'POST' && path === '/api/auth/setup') {
       try { const user = this.setupAdmin(body); const login = this.login(body.email, body.password); return { status: 201, body: { user, session: login.session } }; }
       catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
@@ -184,8 +185,10 @@ export class Firewall {
     }
     const privateRoute = path.startsWith('/api/');
     if (privateRoute && !this.authorize(sessionId)) return { status: 401, body: { error: 'UNAUTHORIZED' } };
+    const detailPath = path.match(/^\/(api\/tool-calls|api\/audit-logs)\/([^/]+)$/);
+    if (method === 'GET' && detailPath) { const event = this.audit.get(decodeURIComponent(detailPath[2])); return event ? { status: 200, body: event } : { status: 404, body: { error: 'NOT_FOUND' } }; }
     const collections = { '/api/dashboard': this.dashboardSummary(), '/api/policies': [...this.policies.values()], '/api/mcp-servers': [...this.servers.values()], '/api/tool-calls': [...this.audit.values()], '/api/audit-logs': [...this.audit.values()], '/api/approvals': [...this.approvals.values()] };
-    if (method === 'GET' && collections[path]) return { status: 200, body: collections[path] };
+    if (method === 'GET' && collections[path]) { let items = collections[path]; if (Array.isArray(items)) for (const key of ['agent', 'server', 'tool', 'decision', 'status']) { const value = query.get(key); if (value) items = items.filter((item) => String(item[key]) === value); } return { status: 200, body: items }; }
     if (method === 'POST' && path === '/api/policies') {
       try { return { status: 201, body: this.addPolicy(body) }; }
       catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
@@ -257,7 +260,7 @@ export function createApiServer(firewall, { port = 3210 } = {}) {
     const url = new URL(request.url, `http://${request.headers.host || `localhost:${port}`}`);
     const cookies = Object.fromEntries(String(request.headers.cookie || '').split(';').map((item) => item.trim().split('=').map(decodeURIComponent)).filter(([key, value]) => key && value));
     const sessionId = request.headers['x-session-id'] || String(request.headers.authorization || '').replace(/^Bearer\s+/i, '') || cookies.session || undefined;
-    if (request.method === 'GET' && url.pathname === '/api/dashboard') { const view = url.searchParams.get('view') || 'dashboard'; if (view === 'login' || (firewall.users.size === 0 && !sessionId)) { response.writeHead(200, { 'content-type': 'text/html' }); response.end(firewall.loginHtml()); return; } if (!firewall.authorize(sessionId)) { response.writeHead(401, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'UNAUTHORIZED', login: '/api/dashboard?view=login' })); return; } response.writeHead(200, { 'content-type': 'text/html' }); response.end(firewall.renderView(view)); return; }
+    if (request.method === 'GET' && url.pathname === '/api/dashboard') { const view = url.searchParams.get('view') || 'dashboard'; if (view === 'login' || (firewall.users.size === 0 && !sessionId)) { response.writeHead(200, { 'content-type': 'text/html' }); response.end(firewall.loginHtml()); return; } if (!firewall.authorize(sessionId)) { response.writeHead(401, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'UNAUTHORIZED', login: '/api/dashboard?view=login' })); return; } if (String(request.headers.accept || '').includes('application/json') || url.searchParams.get('format') === 'json') { const result = firewall.api('GET', url.pathname + url.search, {}, sessionId); response.writeHead(result.status, { 'content-type': 'application/json' }); response.end(JSON.stringify(result.body)); return; } response.writeHead(200, { 'content-type': 'text/html' }); response.end(firewall.renderView(view)); return; }
     let body = {};
     try { if (request.method !== 'GET' && request.method !== 'HEAD') body = await readJsonBody(request); }
     catch { response.writeHead(400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'INVALID_JSON' })); return; }
@@ -265,12 +268,12 @@ export function createApiServer(firewall, { port = 3210 } = {}) {
       try {
         const result = url.pathname === '/mcp/tools/call' ? await firewall.handleCall(body) : await handleMcpMessage(firewall, body, { agent: request.headers['mcp-agent'], server: request.headers['mcp-server'] });
         if (body.method && result?.error && body.method !== 'tools/call') { response.writeHead(result.error.code === -32601 ? 404 : 400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: result.error })); return; }
-        const status = result.decision === 'ALLOW' ? 200 : result.decision === 'REQUIRE_APPROVAL' ? 202 : result.error?.code === 'APPROVAL_UNAVAILABLE' ? 409 : 403;
+        const targetError = result.error?.code === 'TARGET_ERROR' || result.error?.data?.error?.code === 'TARGET_ERROR'; const status = targetError ? 502 : result.decision === 'ALLOW' ? 200 : result.decision === 'REQUIRE_APPROVAL' ? 202 : result.error?.code === 'APPROVAL_UNAVAILABLE' ? 409 : 403;
         response.writeHead(status, { 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }); response.end(JSON.stringify(body.method ? { jsonrpc: '2.0', id: body.id, result: result.error ? undefined : result, error: result.error || undefined } : result)); return;
       } catch (error) { response.writeHead(502, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'TARGET_ERROR', message: error.message })); return; }
     }
     const result = await firewall.api(request.method, url.pathname, body, sessionId);
-    const headers = { 'content-type': 'application/json' }; if (url.pathname === '/api/auth/login' && result.body?.session?.id) headers['set-cookie'] = `session=${encodeURIComponent(result.body.session.id)}; HttpOnly; SameSite=Lax; Path=/`;
+    const headers = { 'content-type': 'application/json' }; if ((url.pathname === '/api/auth/login' || url.pathname === '/api/auth/setup') && result.body?.session?.id) headers['set-cookie'] = `session=${encodeURIComponent(result.body.session.id)}; HttpOnly; SameSite=Lax; Path=/`;
     if (url.pathname === '/api/auth/logout' && result.status === 204) headers['set-cookie'] = 'session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/';
     response.writeHead(result.status, headers);
     response.end(result.status === 204 ? '' : JSON.stringify(result.body));

@@ -1,4 +1,5 @@
-import { boolean, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const policies = pgTable('policies', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -14,7 +15,7 @@ export const auditLogs = pgTable('audit_logs', {
   agent: text('agent').notNull(), server: text('server').notNull(), tool: text('tool').notNull(),
   decision: text('decision').notNull(), policy: text('policy'), arguments: jsonb('arguments').notNull(),
   duration: integer('duration').notNull(), result: jsonb('result'), approvedBy: text('approved_by'), approvedAt: timestamp('approved_at', { withTimezone: true }), createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({ decisionCheck: check('audit_logs_decision_check', sql`${table.decision} in ('ALLOW', 'DENY', 'REQUIRE_APPROVAL')`) }));
 
 export const mcpServers = pgTable('mcp_servers', {
   id: uuid('id').defaultRandom().primaryKey(), name: text('name').notNull().unique(),
