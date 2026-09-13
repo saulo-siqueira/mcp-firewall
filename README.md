@@ -46,7 +46,7 @@ Run `npm test` for the unit and boundary suite. Use `node src/server.js` to run 
 
 ## Roadmap
 
-Future work may add full MCP SDK framing, richer PostgreSQL/Drizzle persistence, SSO/OAuth/MFA, multi-tenant controls, observability exporters, and external approval providers. These are intentionally outside the MVP.
+Future work may add SSO/OAuth/MFA, multi-tenant controls, observability exporters, and external approval providers. These are intentionally outside the MVP.
 
 ## Contributing
 

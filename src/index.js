@@ -55,10 +55,14 @@ export const parseConfigYaml = (source) => {
     if (!value) { nested = key.trim(); nestedIndent = line.search(/\S/); item[nested] = {}; continue; }
     if (nested && line.search(/\S/) > nestedIndent) item[nested][key.trim()] = parseYamlScalar(value); else { nested = null; item[key.trim()] = parseYamlScalar(value); }
   }
+  if (!/^\s*version:\s*1\s*$/m.test(String(source))) throw new Error('configuration version must be 1');
+  for (const policy of config.policies) { if (!policy.name || !policy.action || !DECISIONS.includes(String(policy.action).toUpperCase())) throw new Error('invalid policy configuration'); }
+  for (const server of config.mcp_servers) { if (!server.name || !TRANSPORTS.includes(server.transport || 'stdio')) throw new Error('invalid MCP server configuration'); }
   return config;
 };
 const parseYamlScalar = (value) => { const v = String(value).trim(); if (v === 'true') return true; if (v === 'false') return false; if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1); return v; };
 export const loadConfigFile = (file, options = {}) => { const config = parseConfigYaml(readFileSync(file, 'utf8')); return new Firewall({ policies: config.policies, servers: config.mcp_servers, ...options }); };
+export const startStdioGateway = (firewall, input = process.stdin, output = process.stdout) => { let buffer = ''; input.setEncoding('utf8'); input.on('data', async (chunk) => { buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop(); for (const line of lines.filter(Boolean)) { try { const message = JSON.parse(line); const params = message.params || {}; const result = await firewall.handleCall({ agent: params.agent || message.agent, server: params.server, tool: params.name || params.tool, arguments: params.arguments || {} }); output.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: result.error ? undefined : result, error: result.error || undefined })}\n`); } catch (error) { output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: error.message } })}\n`); } } }); return firewall; };
 
 export class Firewall {
   constructor({ policies = [], servers = [], approvalAvailable = true, storagePath = null } = {}) {
@@ -84,7 +88,7 @@ export class Firewall {
   updatePolicy(name, changes) { const current = this.policies.get(name); if (!current) throw new Error('policy not found'); if (changes.action !== undefined && !DECISIONS.includes(String(changes.action).toUpperCase())) throw new Error('invalid policy action'); const next = { ...current, ...changes, action: changes.action ? String(changes.action).toUpperCase() : current.action }; this.policies.set(name, next); this.persist(); return next; }
   getPolicy(name) { return this.policies.get(name); }
   deletePolicy(name) { const deleted = this.policies.delete(name); if (deleted) this.persist(); return deleted; }
-  policyYaml(name) { const p = this.getPolicy(name); if (!p) throw new Error('policy not found'); return `version: 1\npolicies:\n  - name: ${p.name}\n    match:\n      tool: ${p.match?.tool || '*'}\n    action: ${p.action.toLowerCase()}\n    enabled: ${p.enabled}\n`; }
+  policyYaml(name) { const p = this.getPolicy(name); if (!p) throw new Error('policy not found'); const match = Object.entries(p.match || {}).map(([key, value]) => `      ${key}: ${value}`).join('\n') || '      tool: *'; return `version: 1\npolicies:\n  - name: ${p.name}\n    match:\n${match}\n    action: ${p.action.toLowerCase()}\n    enabled: ${p.enabled}\n`; }
 
   addServer(input) {
     const transport = input?.transport || 'stdio';

@@ -15,7 +15,9 @@ services:
       - "3210:3210"
     volumes:
       - ./mcp-firewall.yaml:/app/mcp-firewall.yaml:ro
-      - firewall-data:/app/.mcp-firewall-data.json
+      - firewall-data:/app/data
+    environment:
+      STORAGE_PATH: /app/data/state.json
 volumes:
   postgres-data:
   firewall-data:
