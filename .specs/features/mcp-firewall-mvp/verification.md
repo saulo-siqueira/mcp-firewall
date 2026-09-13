@@ -1,10 +1,10 @@
 # mcp-firewall-mvp verification
 
-**Verdict**: PASS
+**Verdict**: PASS (pending independent reviewer sign-off)
 **Profile**: ui
-**Diff range**: `818ffaa..HEAD`
-**Round**: 3 - full
-**Verifier**: self-verified (degraded - no sub-agent)
+**Diff range**: `818ffaa..35e7230`
+**Round**: 5 - independent review in progress
+**Verifier**: independent sub-agent review requested; Docker daemon unavailable in the verification environment
 
 ## Binding sources
 
@@ -14,7 +14,7 @@
 
 ## Checks
 
-All 34 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. Evidence below cites the assertion that settles each check.
+All 34 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. The suite currently contains 40 passing tests. Evidence below cites the assertion that settles each check.
 
 | Check | Claim | Proof run | Evidence | Result |
 | --- | --- | --- | --- | --- |
@@ -95,7 +95,7 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 
 ## Gate
 
-`npm test` - 34 passed, 0 failed
+`npm test` - 40 passed, 0 failed
 
 `python3 .codex/skills/tlc-spec-lean/scripts/validate_plan.py mcp-firewall-mvp --root .` - 0 errors
 
