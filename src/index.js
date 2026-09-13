@@ -211,6 +211,7 @@ export class Firewall {
         try { return { status: 200, body: this.reject(approvalId, this.sessionUser(sessionId)?.name || 'admin') }; }
         catch (error) { return { status: error.message === 'approval is not pending' ? 409 : 404, body: { error: error.message === 'approval is not pending' ? 'APPROVAL_NOT_PENDING' : 'NOT_FOUND' } }; }
       }
+      if (!this.approvals.has(approvalId)) return Promise.resolve({ status: 404, body: { error: 'NOT_FOUND' } });
       return this.approve(approvalId, this.sessionUser(sessionId)?.name || 'admin')
         .then((result) => ({ status: 200, body: result }))
         .catch((error) => ({ status: error.message === 'approval is not pending' ? 409 : 404, body: { error: error.message === 'approval is not pending' ? 'APPROVAL_NOT_PENDING' : 'NOT_FOUND' } }));
