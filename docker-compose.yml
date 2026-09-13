@@ -18,6 +18,7 @@ services:
       - firewall-data:/app/data
     environment:
       STORAGE_PATH: /app/data/state.json
+      DATABASE_URL: postgres://mcp_firewall:mcp_firewall@postgres:5432/mcp_firewall
 volumes:
   postgres-data:
   firewall-data:

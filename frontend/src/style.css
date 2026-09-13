@@ -1,0 +1,1 @@
+:root{font-family:system-ui,sans-serif;color:#24201d;background:#fcfaf7}body{margin:0;padding:3rem}main{max-width:960px;margin:auto}nav{display:flex;gap:1rem;margin:2rem 0}a{color:#c34c00}section{display:grid;grid-template-columns:1fr 1fr;gap:1rem}section h2,section p{padding:1rem;background:white;border:1px solid #e3e0dd;border-radius:8px}
