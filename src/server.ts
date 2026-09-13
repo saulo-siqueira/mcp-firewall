@@ -14,7 +14,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { appendAudit, ensureDatabase, loadConfiguration, syncConfiguration } from './db/repository.js';
 
 const root = process.cwd();
-const configPath = join(root, 'mcp-firewall.yaml');
+const configPath = process.env.CONFIG_PATH || join(root, 'mcp-firewall.yaml');
 const firewall = existsSync(configPath) ? loadConfigFile(configPath, { storagePath: process.env.STORAGE_PATH || join(root, '.mcp-firewall-data.json') }) : new Firewall({ storagePath: process.env.STORAGE_PATH || join(root, '.mcp-firewall-data.json') });
 const database = createDatabase();
 const mcpServer = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capabilities: { tools: {} } });
