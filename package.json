@@ -1,0 +1,12 @@
+{
+  "name": "mcp-firewall",
+  "version": "0.1.0",
+  "description": "Policy gateway between AI agents and MCP servers",
+  "type": "module",
+  "bin": {
+    "mcp-firewall": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
