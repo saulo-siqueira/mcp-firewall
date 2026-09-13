@@ -22,12 +22,12 @@ const mcpServer = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capab
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   const params: any = request.params;
-  const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER, tool: params.name, arguments: params.arguments || {} });
+  const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER || [...firewall.servers.keys()][0], tool: params.name, arguments: params.arguments || {} });
   if (result.error) throw new Error(result.error.message);
   return { content: [{ type: 'text', text: JSON.stringify(result.result ?? null) }] };
 });
 const transports = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
-const createSdkServer = () => { const server = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capabilities: { tools: {} } }); server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] })); server.setRequestHandler(CallToolRequestSchema, async (request: any) => { const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER, tool: request.params.name, arguments: request.params.arguments || {} }); if (result.error) throw new Error(result.error.message); return { content: [{ type: 'text', text: JSON.stringify(result.result ?? null) }] }; }); return server; };
+const createSdkServer = () => { const server = new Server({ name: 'mcp-firewall', version: '0.1.0' }, { capabilities: { tools: {} } }); server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] })); server.setRequestHandler(CallToolRequestSchema, async (request: any) => { const result = await firewall.handleCall({ agent: process.env.MCP_AGENT || 'mcp-client', server: process.env.MCP_SERVER || [...firewall.servers.keys()][0], tool: request.params.name, arguments: request.params.arguments || {} }); if (result.error) throw new Error(result.error.message); return { content: [{ type: 'text', text: JSON.stringify(result.result ?? null) }] }; }); return server; };
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
 const telemetry = new NodeSDK({ serviceName: 'mcp-firewall' });
 if (process.env.OTEL_SDK_DISABLED !== 'true') await telemetry.start();

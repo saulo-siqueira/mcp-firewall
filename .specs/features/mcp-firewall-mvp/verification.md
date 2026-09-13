@@ -2,7 +2,7 @@
 
 **Verdict**: PASS
 **Profile**: ui
-**Diff range**: `86ccab3..aa589f0`
+**Diff range**: `86ccab3..HEAD`
 **Round**: final independent review
 **Verifier**: fresh independent sub-agent returned PASS for the functional MVP gate after the final fixes; no product files were edited during review.
 
