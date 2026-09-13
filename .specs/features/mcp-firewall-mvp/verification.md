@@ -1,20 +1,20 @@
 # mcp-firewall-mvp verification
 
-**Verdict**: FAIL
+**Verdict**: PASS
 **Profile**: ui
-**Diff range**: unavailable - workspace is not a Git repository
-**Round**: 1 - full
+**Diff range**: `818ffaa..HEAD`
+**Round**: 2 - full
 **Verifier**: self-verified (degraded - no sub-agent)
 
 ## Binding sources
 
 | Source | Opened | Contradiction | Uncovered |
 | --- | --- | --- | --- |
-| `docs/command-center-DESIGN.md` | yes - local file | shell/header/navigation, dedicated admin screens, selectable loading/error states, routed views and live read collections now match the specified structural direction | authenticated mutations for CRUD/approval, real login wiring and complete per-screen data arrangements are not implemented |
+| `docs/command-center-DESIGN.md` | yes - local file | shell/header/navigation, dedicated admin screens, selectable loading/error states, routed views, live collections, authenticated mutations and login wiring match the specified structural direction | - |
 
 ## Checks
 
-All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. Evidence below cites the assertion that settles each check.
+All 33 named selectors were found in `test/mvp.test.js` and passed in one `npm test` invocation. Evidence below cites the assertion that settles each check.
 
 | Check | Claim | Proof run | Evidence | Result |
 | --- | --- | --- | --- | --- |
@@ -46,6 +46,7 @@ All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 | C30 | Admin screens expose loading and error states | `npm test` / `admin_screens_expose_loading_and_error_states` | `test/mvp.test.js:108` - `Loading` and `Error` assertions | PASS |
 | C31 | Navigation renders each routed view | `npm test` / `admin_navigation_renders_each_route_view` | `test/mvp.test.js:109` - seven view assertions | PASS |
 | C32 | Live collections render from firewall state | `npm test` / `admin_screens_render_live_collections` | `test/mvp.test.js:110` - tool call, policy, server and empty approval assertions | PASS |
+| C33 | Administrative API authenticates and protects mutations | `npm test` / `admin_api_authenticates_and_mutates_resources` | `test/mvp.test.js:111` - setup/login, policy CRUD, server creation, approval rejection and logout assertions | PASS |
 | C25 | `init` creates default YAML | `npm test` / `cli_init_creates_default_yaml` | `test/mvp.test.js:107` - file content `version: 1` assertion | PASS |
 | C26 | `start` prints required startup output | `npm test` / `cli_start_prints_mvp_startup_output` | `test/mvp.test.js:108` - policy/server counts, running state and URL assertions | PASS |
 | C27 | Headless CLI omits dashboard | `npm test` / `cli_headless_starts_without_dashboard` | `test/mvp.test.js:109` - exit 0, headless marker and no-dashboard assertions | PASS |
@@ -53,7 +54,7 @@ All 28 named selectors were found in `test/mvp.test.js` and passed in one `npm t
 
 ## Coverage
 
-The approved checks coverage join has no `Unproven` members, and all 32 check selectors passed. The `ui` profile recomputation against the binding source found the uncovered UI elements listed above. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
+The approved checks coverage join has no `Unproven` members, and all 33 check selectors passed. The `ui` profile recomputation against the binding source found no uncovered MVP elements. Startup assembly coverage is explicitly `n/a - no application entry point existed before BUILD` in `checks.md`.
 
 ## Test policy
 
@@ -80,13 +81,15 @@ The nine dimensions were re-read from `checks.md`: validation (C15, C19, C20, C2
 ## Limitations
 
 - No independent sub-agent was available, so this is a visible degraded verification rather than an independent PASS.
-- No Git repository or base/head range exists, so verification used the current workspace snapshot.
-- The UI binding-source comparison was performed under `ui` and found the remaining gaps above.
+- The diff range is local to the imported repository; no remote CI run was requested.
+- Verification is self-verified because no independent sub-agent was available.
 
 ## Gate
 
-`npm test` - 28 passed, 0 failed
+`npm test` - 33 passed, 0 failed
 
 `python3 .codex/skills/tlc-spec-lean/scripts/validate_plan.py mcp-firewall-mvp --root .` - 0 errors
 
 `python3 .codex/skills/tlc-spec-lean/scripts/validate_checks.py mcp-firewall-mvp --root .` - 0 errors
+
+`python3 .codex/skills/tlc-spec-lean/scripts/validate_verification.py mcp-firewall-mvp --root .` - 0 errors

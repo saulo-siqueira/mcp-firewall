@@ -104,19 +104,68 @@ export class Firewall {
   authorize(sessionId) { const session = this.sessions.get(sessionId); if (!session || session.expires_at <= Date.now()) { this.sessions.delete(sessionId); return false; } return true; }
   logout(sessionId) { this.sessions.delete(sessionId); }
 
+  api(method, path, body = {}, sessionId) {
+    if (method === 'POST' && path === '/api/auth/setup') {
+      try { return { status: 201, body: { user: this.setupAdmin(body) } }; }
+      catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
+    }
+    if (method === 'POST' && path === '/api/auth/login') {
+      try { return { status: 200, body: this.login(body.email, body.password) }; }
+      catch (error) { return { status: 401, body: { error: 'INVALID_CREDENTIALS' } }; }
+    }
+    if (method === 'POST' && path === '/api/auth/logout') {
+      if (!this.authorize(sessionId)) return { status: 401, body: { error: 'UNAUTHORIZED' } };
+      this.logout(sessionId); return { status: 204, body: null };
+    }
+    const privateRoute = path.startsWith('/api/');
+    if (privateRoute && !this.authorize(sessionId)) return { status: 401, body: { error: 'UNAUTHORIZED' } };
+    const collections = { '/api/policies': [...this.policies.values()], '/api/mcp-servers': [...this.servers.values()], '/api/tool-calls': [...this.audit.values()], '/api/audit-logs': [...this.audit.values()], '/api/approvals': [...this.approvals.values()] };
+    if (method === 'GET' && collections[path]) return { status: 200, body: collections[path] };
+    if (method === 'POST' && path === '/api/policies') {
+      try { return { status: 201, body: this.addPolicy(body) }; }
+      catch (error) { return { status: error.code === 'CONFLICT' ? 409 : 422, body: { error: error.message } }; }
+    }
+    const policyPath = path.match(/^\/api\/policies\/([^/]+)$/);
+    if (policyPath && method === 'PATCH') {
+      try { return { status: 200, body: this.updatePolicy(decodeURIComponent(policyPath[1]), body) }; }
+      catch (error) { return { status: 404, body: { error: 'NOT_FOUND' } }; }
+    }
+    if (policyPath && method === 'DELETE') {
+      if (!this.deletePolicy(decodeURIComponent(policyPath[1]))) return { status: 404, body: { error: 'NOT_FOUND' } };
+      return { status: 204, body: null };
+    }
+    if (method === 'POST' && path === '/api/mcp-servers') {
+      try { return { status: 201, body: this.addServer(body) }; }
+      catch (error) { return { status: 422, body: { error: error.message } }; }
+    }
+    const approvalPath = path.match(/^\/api\/approvals\/([^/]+)\/(approve|reject)$/);
+    if (approvalPath && method === 'POST') {
+      const approvalId = decodeURIComponent(approvalPath[1]);
+      if (approvalPath[2] === 'reject') {
+        try { return { status: 200, body: this.reject(approvalId, body.approver || 'admin') }; }
+        catch { return { status: 404, body: { error: 'NOT_FOUND' } }; }
+      }
+      return this.approve(approvalId, body.approver || 'admin')
+        .then((result) => ({ status: 200, body: result }))
+        .catch(() => ({ status: 409, body: { error: 'APPROVAL_NOT_PENDING' } }));
+    }
+    return { status: 404, body: { error: 'NOT_FOUND' } };
+  }
+
   start({ headless = false } = {}) { return { headless, running: true, dashboard: headless ? null : 'http://localhost:3210' }; }
   startOutput() { return `MCP Firewall v${'0.1.0'}\n\nPolicies loaded: ${this.policies.size}\nMCP servers: ${this.servers.size}\n\nGateway running.\nDashboard: http://localhost:3210`; }
 
-  dashboardHtml() { const allowed = [...this.audit.values()].filter((x) => x.decision === 'ALLOW').length; const blocked = [...this.audit.values()].filter((x) => x.decision === 'DENY').length; const approvals = [...this.audit.values()].filter((x) => x.decision === 'REQUIRE_APPROVAL').length; return shell('Dashboard', `<h1>Dashboard</h1><section class="metrics"><b>Total Tool Calls ${this.audit.size}</b><b>Allowed ${allowed}</b><b>Blocked ${blocked}</b><b>Requires Approval ${approvals}</b></section><section class="workspace-grid"><div><h2>Recent Calls</h2><p class="empty">No tool calls recorded yet.</p></div><div><h2>Active Policies</h2><p class="empty">No active policies.</p></div><div><h2>Secrets Intercepted</h2><p class="empty">No secrets intercepted.</p></div></section>`); }
+  dashboardHtml() { const allowed = [...this.audit.values()].filter((x) => x.decision === 'ALLOW').length; const blocked = [...this.audit.values()].filter((x) => x.decision === 'DENY').length; const approvals = [...this.audit.values()].filter((x) => x.decision === 'REQUIRE_APPROVAL').length; const recent = [...this.audit.values()].slice(-5).reverse().map((x) => `<article>${x.tool} · ${x.decision}</article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'; const active = [...this.policies.values()].filter((x) => x.enabled).map((x) => `<article>${x.name} · ${x.action}</article>`).join('') || '<p class="empty">No active policies.</p>'; const secrets = [...this.audit.values()].filter((x) => JSON.stringify(x.arguments).includes(REDACTED)).length; return shell('Dashboard', `<h1>Dashboard</h1><section class="metrics"><b>Total Tool Calls ${this.audit.size}</b><b>Allowed ${allowed}</b><b>Blocked ${blocked}</b><b>Requires Approval ${approvals}</b></section><section class="workspace-grid"><div><h2>Recent Calls</h2>${recent}</div><div><h2>Active Policies</h2>${active}</div><div><h2>Secrets Intercepted</h2><p>${secrets}</p></div></section>`); }
   auditDetailHtml(auditId) { const event = this.audit.get(auditId); return shell('Audit Logs', `<h1>Audit Logs</h1><pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>`); }
   approvalsHtml() { return shell('Approvals', `<h1>Approvals</h1>${[...this.approvals.values()].map((a) => `<article><strong>${a.status}</strong> ${a.tool}<button>Approve</button><button>Reject</button></article>`).join('') || '<p class="empty">No pending approvals.</p>'}`); }
   serversHtml() { return shell('MCP Servers', `<h1>MCP Servers</h1>${[...this.servers.values()].map((s) => `<article>${s.name}: <strong>${s.status}</strong></article>`).join('') || '<p class="empty">No MCP servers configured.</p>'}`); }
-  loginHtml() { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Create Admin Account</title><style>body{margin:0;background:#fcfaf7;color:#423d38;font:14px ui-sans-serif,system-ui}.login{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.visual{padding:64px;background:#fff;display:grid;place-content:center}.panel{background:#ff6b00;padding:64px;display:grid;place-content:center}.card{background:#fff;border-radius:8px;padding:32px;min-width:280px}input{display:block;width:100%;margin:8px 0;padding:10px;border:1px solid #e3e0dd;border-radius:6px}button{background:#fe6e00;color:#fff;border:0;padding:10px 16px;border-radius:6px}@media(max-width:700px){.login{grid-template-columns:1fr}.visual{display:none}}</style></head><body><main class="login"><section class="visual"><h1>MCP Firewall</h1><p>Policy control between agents and tools.</p></section><section class="panel"><form class="card"><h2>Create Admin Account</h2><label>Name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Password<input name="password" type="password"></label><label>Confirm Password<input name="confirmPassword" type="password"></label><button>Create Admin</button></form></section></main></body></html>`; }
+  loginHtmlLegacy() { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Create Admin Account</title><style>body{margin:0;background:#fcfaf7;color:#423d38;font:14px ui-sans-serif,system-ui}.login{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.visual{padding:64px;background:#fff;display:grid;place-content:center}.panel{background:#ff6b00;padding:64px;display:grid;place-content:center}.card{background:#fff;border-radius:8px;padding:32px;min-width:280px}input{display:block;width:100%;margin:8px 0;padding:10px;border:1px solid #e3e0dd;border-radius:6px}button{background:#fe6e00;color:#fff;border:0;padding:10px 16px;border-radius:6px}@media(max-width:700px){.login{grid-template-columns:1fr}.visual{display:none}}</style></head><body><main class="login"><section class="visual"><h1>MCP Firewall</h1><p>Policy control between agents and tools.</p></section><section class="panel"><form class="card"><h2>Create Admin Account</h2><label>Name<input name="name"></label><label>Email<input name="email" type="email"></label><label>Password<input name="password" type="password"></label><label>Confirm Password<input name="confirmPassword" type="password"></label><button>Create Admin</button></form></section></main></body></html>`; }
+  loginHtml() { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MCP Firewall Admin</title><style>body{margin:0;background:#fcfaf7;color:#423d38;font:14px ui-sans-serif,system-ui}.login{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.visual{padding:64px;background:#fff;display:grid;place-content:center}.panel{background:#ff6b00;padding:64px;display:grid;place-content:center}.card{background:#fff;border-radius:8px;padding:32px;min-width:280px}input{display:block;width:100%;margin:8px 0;padding:10px;border:1px solid #e3e0dd;border-radius:6px}button{background:#fe6e00;color:#fff;border:0;padding:10px 16px;border-radius:6px}@media(max-width:700px){.login{grid-template-columns:1fr}.visual{display:none}}</style></head><body><main class="login"><section class="visual"><h1>MCP Firewall</h1><p>Policy control between agents and tools.</p></section><section class="panel"><form class="card" id="admin-setup"><h2>Create Admin Account</h2><input name="name" placeholder="Name" required><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><input name="confirmPassword" type="password" placeholder="Confirm Password" required><button>Create Admin</button></form><form class="card" id="admin-login"><h2>Sign in</h2><input name="email" type="email" placeholder="Email" required><input name="password" type="password" placeholder="Password" required><button>Sign in</button></form></section></main><script>const submit=async(form,path)=>{form.addEventListener('submit',async(event)=>{event.preventDefault();const body=Object.fromEntries(new FormData(form));const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)return alert(data.error||'Request failed');if(data.session)localStorage.setItem('mcp-firewall-session',data.session.id);location.href='/api/dashboard';});};submit(document.querySelector('#admin-setup'),'/api/auth/setup');submit(document.querySelector('#admin-login'),'/api/auth/login');</script></body></html>`; }
   toolCallsHtml() { return shell('Tool Calls', `<h1>Tool Calls</h1>${[...this.audit.values()].map((event) => `<article><strong>${event.tool}</strong> · ${event.agent} · ${event.server} · ${event.decision}</article>`).join('') || '<p class="empty">No tool calls recorded yet.</p>'}`); }
   policiesHtml() { return shell('Policies', `<h1>Policies</h1>${[...this.policies.values()].map((policy) => `<article><strong>${policy.name}</strong> · ${policy.action} · ${policy.enabled ? 'Enabled' : 'Disabled'}</article>`).join('') || '<p class="empty">No policies configured.</p>'}<button>Create policy</button>`); }
   settingsHtml() { return shell('Settings', `<h1>Settings</h1><p>Gateway configuration and session settings.</p>`); }
   renderView(view = 'dashboard') {
-    const views = { dashboard: () => this.dashboardHtml(), 'tool-calls': () => this.toolCallsHtml(), policies: () => this.policiesHtml(), 'mcp-servers': () => this.serversHtml(), approvals: () => this.approvalsHtml(), 'audit-logs': () => this.auditDetailHtml([...this.audit.keys()][0]), settings: () => this.settingsHtml() };
+    const views = { dashboard: () => this.dashboardHtml(), 'tool-calls': () => this.toolCallsHtml(), policies: () => this.policiesHtml(), 'mcp-servers': () => this.serversHtml(), approvals: () => this.approvalsHtml(), 'audit-logs': () => this.auditDetailHtml([...this.audit.keys()][0]), settings: () => this.settingsHtml(), login: () => this.loginHtml() };
     return (views[view] || views.dashboard)();
   }
 }
@@ -127,14 +176,24 @@ const shell = (active, body) => `<!doctype html><html lang="en"><head><meta char
   </style></head><body><div class="app"><aside class="shell-sidebar"><p class="brand">MCP Firewall</p><nav class="nav">${['Dashboard','Tool Calls','Policies','MCP Servers','Approvals','Audit Logs','Settings'].map((item) => { const view = item.toLowerCase().replaceAll(' ', '-'); return `<a class="${item === active ? 'active' : ''}" href="/api/dashboard?view=${view}">${item}</a>`; }).join('')}</nav></aside><div class="main"><header class="shell-header"><strong>${active}</strong><small>ADMIN · LOCAL GATEWAY</small></header><main class="content"><div class="state" data-state="loading" hidden>Loading</div><div class="state error" data-state="error" hidden>Error loading data</div>${body}</main></div></div></body></html>`;
 const page = (title, body) => shell(title, body);
 
+const readJsonBody = (request) => new Promise((resolve, reject) => {
+  let data = '';
+  request.on('data', (chunk) => { data += chunk; });
+  request.on('end', () => { if (!data) return resolve({}); try { resolve(JSON.parse(data)); } catch { reject(new Error('invalid JSON')); } });
+  request.on('error', reject);
+});
+
 export function createApiServer(firewall, { port = 3210 } = {}) {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || `localhost:${port}`}`);
     if (request.method === 'GET' && url.pathname === '/api/dashboard') { response.writeHead(200, { 'content-type': 'text/html' }); response.end(firewall.renderView(url.searchParams.get('view') || 'dashboard')); return; }
-    if (request.method === 'GET' && url.pathname === '/api/approvals') { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify([...firewall.approvals.values()])); return; }
-    const collections = { '/api/policies': [...firewall.policies.values()], '/api/mcp-servers': [...firewall.servers.values()], '/api/tool-calls': [...firewall.audit.values()], '/api/audit-logs': [...firewall.audit.values()] };
-    if (request.method === 'GET' && collections[url.pathname]) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify(collections[url.pathname])); return; }
-    response.writeHead(404, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'NOT_FOUND' }));
+    let body = {};
+    try { if (request.method !== 'GET' && request.method !== 'HEAD') body = await readJsonBody(request); }
+    catch { response.writeHead(400, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'INVALID_JSON' })); return; }
+    const sessionId = request.headers['x-session-id'] || String(request.headers.authorization || '').replace(/^Bearer\s+/i, '') || undefined;
+    const result = await firewall.api(request.method, url.pathname, body, sessionId);
+    response.writeHead(result.status, { 'content-type': 'application/json' });
+    response.end(result.status === 204 ? '' : JSON.stringify(result.body));
   });
 }
 
