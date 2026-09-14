@@ -3,14 +3,14 @@
 **Verdict**: PASS
 **Profile**: ui
 **Diff range**: `86ccab3..HEAD`
-**Round**: post-gap correction review
-**Verifier**: independent review is rerun after the current corrections; no product files are edited during review.
+**Round**: final independent review
+**Verifier**: fresh independent verifier returned PASS on HEAD `fcb85aa`; no product files were edited during review.
 
 Binding evidence: `src/index.js:42`, `src/index.js:126`, `src/server.ts:41`, `frontend/src/main.tsx:13`, `Dockerfile:5`, `test/mvp.test.js:12`, `test/stack-http.test.ts:10`.
 
 ## Evidence
 
-- `npm test`: 42 Node tests passed; Vitest 9 passed, 1 skipped by default.
+- `npm test`: 45 Node tests passed; Vitest 10 passed, 1 skipped by default.
 - `npm run build`: passed.
 - `npm run test:e2e`: 5/5 Chromium passed, including all seven React views, CRUD, approval, audit and logout.
 - `npm run test:integration`: 2/2 passed, including independent Mock MCP and real PostgreSQL configuration/audit persistence.
@@ -28,7 +28,7 @@ The 34 frozen selectors have direct executable definitions in `test/mvp.test.js`
 
 ## Coverage
 
-All 34 named checks in `checks.md` exist and pass in `test/mvp.test.js`. Boundary, browser, integration and Docker suites provide additional proof for the Fastify MCP/API surface, JSON-RPC IDs/statuses, result redaction, Docker runtime and React Command Center. The review must confirm no unproven Coverage member or remaining functional MVP gap.
+All 34 named checks in `checks.md` exist and pass in `test/mvp.test.js`. Boundary, browser, integration and Docker suites provide additional proof for the Fastify and legacy MCP/API surfaces, JSON-RPC IDs/statuses, result redaction, dashboard JSON, filters/details, Docker runtime and React Command Center. The final independent review confirmed no unproven Coverage member or remaining functional MVP gap.
 
 ## Test policy
 
